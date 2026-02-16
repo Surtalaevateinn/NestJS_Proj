@@ -27,7 +27,7 @@ Ensure you have Docker Desktop and pnpm installed.
 Clone the Repository
 
 Bash
-git clone https://github.com/your-username/your-repo-name.git
+git clone https://github.com/Surtalaevateinn/NestJS_Proj.git
 cd your-repo-name
 Infrastructure Initialization
 Launch the entire stack (Database, Backend, Frontend) with one command:
