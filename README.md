@@ -71,4 +71,4 @@ Interactions: Subtle backdrop blurs and smooth transition states.
 
 [ ] Internationalization (i18n) for Global Markets
 
-Developed with a focus on high-dimensional architectural辨析 and professional excellence.
+Developed with a focus on high-dimensional architectural and professional excellence.
