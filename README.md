@@ -1,9 +1,6 @@
 🌌 Full-Stack Nexus: NestJS + Next.js + TypeORM
 A high-fidelity, containerized full-stack ecosystem designed for scalability and performance. This project integrates a robust NestJS backend, a modern Next.js frontend, and a PostgreSQL database managed through TypeORM, all orchestrated within a professional Docker environment.
 
-💎 Project Philosophy
-Designed with a "Quiet Luxury" (清冷内敛) aesthetic—prioritizing precision, minimalist design, and deep technical control. This is not just a project; it is an architectural foundation for high-end international applications.
-
 🛠 Tech Stack
 Frontend: Next.js 15 (App Router, TypeScript, Tailwind CSS)
 
