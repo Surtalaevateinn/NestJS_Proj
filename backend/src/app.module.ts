@@ -4,6 +4,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { User } from './user.entity';
 import {ForestParcel} from "./forest/forest.entity";
+import { ForestController } from './forest/forest.controller';
 import { AuthModule } from './auth/auth.module';
 
 @Module({
@@ -22,7 +23,7 @@ import { AuthModule } from './auth/auth.module';
     TypeOrmModule.forFeature([User, ForestParcel]),
     AuthModule,
   ],
-  controllers: [AppController],
+  controllers: [AppController, ForestController],
   providers: [AppService],
 })
 export class AppModule {}
