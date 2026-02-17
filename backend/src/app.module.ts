@@ -4,6 +4,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { User } from './user.entity';
 import {ForestParcel} from "./forest/forest.entity";
+import { AuthModule } from './auth/auth.module';
 
 @Module({
   imports: [
@@ -18,7 +19,8 @@ import {ForestParcel} from "./forest/forest.entity";
       autoLoadEntities: true,
       synchronize: true,
     }),
-    TypeOrmModule.forFeature([User]),
+    TypeOrmModule.forFeature([User, ForestParcel]),
+    AuthModule,
   ],
   controllers: [AppController],
   providers: [AppService],
