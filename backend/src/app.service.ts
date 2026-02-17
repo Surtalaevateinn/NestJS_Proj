@@ -11,7 +11,12 @@ export class AppService {
   ) {}
 
   async createInitialUser() {
-    const newUser = this.usersRepository.create({ username: 'Gemini_User' });
+    const newUser = this.usersRepository.create({
+      email: 'admin@symbiose.com',
+      firstName: 'Dongshan',
+      lastName: 'ZHU',
+      role: 'admin'
+    });
     return this.usersRepository.save(newUser);
   }
 

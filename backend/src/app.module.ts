@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { User } from './user.entity';
+import {ForestParcel} from "./forest/forest.entity";
 
 @Module({
   imports: [
@@ -13,7 +14,7 @@ import { User } from './user.entity';
       username: process.env.DATABASE_USER || 'postgres',
       password: process.env.DATABASE_PASSWORD || 'postgres',
       database: process.env.DATABASE_NAME || 'local',
-      entities: [User],
+      entities: [User, ForestParcel],
       autoLoadEntities: true,
       synchronize: true,
     }),
