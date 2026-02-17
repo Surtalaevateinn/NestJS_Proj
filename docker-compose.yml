@@ -39,6 +39,10 @@ services:
       DATABASE_USER: postgres
       DATABASE_PASSWORD: postgres
       DATABASE_NAME: local
+    volumes:
+      - ./data:/app/data
+      - ./backend:/app  # Hot code update synchronization
+      - /app/node_modules # Dependencies within the isolation container
 
 
   frontend:

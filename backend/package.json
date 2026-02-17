@@ -8,6 +8,7 @@
   "scripts": {
     "build": "nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
+    "seed:forest": "ts-node src/scripts/seed-forest.ts",
     "start": "nest start",
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
@@ -28,8 +29,10 @@
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.3",
     "pg": "^8.18.0",
+    "proj4": "^2.20.2",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
+    "shapefile": "^0.6.6",
     "swagger-ui-express": "^5.0.1",
     "typeorm": "^0.3.28"
   },
@@ -52,6 +55,8 @@
     "@types/geojson": "^7946.0.16",
     "@types/jest": "^30.0.0",
     "@types/node": "^22.10.7",
+    "@types/proj4": "^2.19.0",
+    "@types/shapefile": "^0.6.4",
     "@types/supertest": "^6.0.2",
     "eslint": "^9.18.0",
     "eslint-config-prettier": "^10.0.1",
