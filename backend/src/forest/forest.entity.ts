@@ -7,19 +7,27 @@ export class ForestParcel {
     id: number;
 
     @Column({ nullable: true })
-    ign_id: string;
+    ign_id?: string;
 
     @Column({ nullable: true })
-    speciesCode: string;
+    speciesCode?: string;
 
     @Column({ nullable: true })
-    speciesName: string;
+    speciesName?: string;
 
     @Column({ nullable: true })
-    vegetationType: string;
+    vegetationType?: string;
 
     @Column({ type: 'float', nullable: true })
     areaHa: number;
+
+    // --- Ensure that deptCode and communeName are nullable ---
+    @Column({ nullable: true })
+    @Index()
+    deptCode?: string;
+
+    @Column({ nullable: true })
+    communeName?: string;
 
     // --- Core geographic data ---
     // SRID 4326 represents WGS84 (latitude and longitude), which is the standard for Mapbox.
