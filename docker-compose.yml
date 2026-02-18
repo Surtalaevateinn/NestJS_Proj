@@ -49,6 +49,9 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN=pk.eyJ1Ijoic3VydGFsb2dpIiwiYSI6ImNtbHI0em8xOTA2dXczZXNnOTVxdW9ybGsifQ.m7eHhSov9zrhlYMXpH4aJg
+        - NEXT_PUBLIC_API_URL=http://localhost:3000
     container_name: nextjs_frontend
     restart: always
     ports:

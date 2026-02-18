@@ -1,102 +1,147 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import mapboxgl from 'mapbox-gl';
+import 'mapbox-gl/dist/mapbox-gl.css';
+import { getToken, logout } from '@/lib/auth';
+import { fetchWithAuth } from '@/lib/api';
 
-interface User {
-    id: number;
-    username: string;
-    isActive: boolean;
-}
+// Inject the token configured in docker-compose
+const MB_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN;
 
-export default function Dashboard() {
-    const [users, setUsers] = useState<User[]>([]);
-    const [loading, setLoading] = useState(true);
+export default function MapPage() {
+    const mapContainer = useRef<HTMLDivElement>(null);
+    const map = useRef<mapboxgl.Map | null>(null);
+    const router = useRouter();
+    const [isLoaded, setIsLoaded] = useState(false);
 
     useEffect(() => {
-        fetch('http://localhost:3000/users')
-            .then((res) => res.json())
-            .then((data) => {
-                setUsers(data);
-                setLoading(false);
-            })
-            .catch((err) => {
-                console.error('System Link Failure:', err);
-                setLoading(false);
+        mapboxgl.accessToken = MB_TOKEN || 'pk.eyJ1Ijoic3VydGFsb2dpIiwiYSI6ImNtbHI0em8xOTA2dXczZXNnOTVxdW9ybGsifQ.m7eHhSov9zrhlYMXpH4aJg';
+        const token = getToken();
+        if (!token) {
+            router.push('/login');
+            return;
+        }
+
+        // 1. Get the initial view stored during login.
+        const savedView = JSON.parse(localStorage.getItem('user_view') || '{}');
+        const initialCenter: [number, number] = [savedView.lng || 2.3522, savedView.lat || 48.8566];
+        const initialZoom = savedView.zoom || 10;
+
+        if (map.current) return; // Prevent duplicate initialization
+
+        // 2. Initialize map
+        map.current = new mapboxgl.Map({
+            container: mapContainer.current!,
+            style: 'mapbox://styles/mapbox/dark-v11',
+            center: initialCenter,
+            zoom: initialZoom,
+        });
+
+        map.current.on('load', async () => {
+            setIsLoaded(true);
+
+            // 3. Retrieve 358 GeoJSON data entries from the backend.
+            const geojsonData = await fetchWithAuth('/forests');
+
+            // 4. Add forest data as a source.
+            map.current?.addSource('forests', {
+                type: 'geojson',
+                data: geojsonData
             });
-    }, []);
+
+            // 5. Rendering layers
+            map.current?.addLayer({
+                id: 'forests-layer',
+                type: 'fill',
+                source: 'forests',
+                paint: {
+                    'fill-color': '#10b981',
+                    'fill-opacity': 0.5,
+                    'fill-outline-color': '#fff'
+                }
+            });
+
+            // 6. Add a pop-up message upon clicking [cite: 17, 18]
+            map.current?.on('click', 'forests-layer', (e) => {
+                const props = e.features?.[0].properties;
+                if (props) {
+                    new mapboxgl.Popup()
+                        .setLngLat(e.lngLat)
+                        .setHTML(`
+                            <div class="text-slate-900 p-2">
+                                <h3 class="font-bold border-b mb-1">${props.species}</h3>
+                                <p class="text-xs text-slate-600">Area: ${props.area.toFixed(2)} Ha</p>
+                                <p class="text-[10px] text-slate-400">ID: ${props.ign_id}</p>
+                            </div>
+                        `)
+                        .addTo(map.current!);
+                }
+            });
+        });
+
+        // 7. Listen for the move to complete and prepare to save the state (Requirement 24) [cite: 24]
+        // map.current.on('moveend', () => {
+        //     const center = map.current?.getCenter();
+        //     const zoom = map.current?.getZoom();
+        //     console.log('New State to save:', center, zoom);
+        // });
+        map.current.on('moveend', async () => {
+            const center = map.current?.getCenter();
+            const zoom = map.current?.getZoom();
+
+            if (center && zoom) {
+                const viewState = {
+                    lat: center.lat,
+                    lng: center.lng,
+                    zoom: zoom
+                };
+
+                // Real-time synchronization to the backend database
+                try {
+                    await fetchWithAuth('/auth/update-view', {
+                        method: 'PATCH',
+                        body: JSON.stringify(viewState)
+                    });
+
+                    // Synchronize and update local storage
+                    localStorage.setItem('user_view', JSON.stringify(viewState));
+                } catch (error) {
+                    console.error('Failed to sync map state:', error);
+                }
+            }
+        });
+
+        return () => map.current?.remove();
+    }, [router]);
 
     return (
-        <div className="min-h-screen bg-slate-950 text-slate-200 selection:bg-cyan-500/30">
-            {/* Navigation Header */}
-            <nav className="border-b border-slate-800 bg-slate-950/50 backdrop-blur-md sticky top-0 z-10">
-                <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-          <span className="text-sm font-light tracking-widest uppercase text-slate-400">
-            System Architecture <span className="text-cyan-500">v1.0</span>
-          </span>
-                    <div className="flex gap-4">
-                        <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-                        <span className="text-[10px] uppercase tracking-tighter text-slate-500">Node Online</span>
-                    </div>
-                </div>
+        <div className="relative w-full h-screen bg-slate-950">
+            {/* Top bar control */}
+            <nav className="absolute top-0 left-0 right-0 z-10 p-4 flex justify-between items-center bg-slate-950/40 backdrop-blur-sm border-b border-white/10">
+                <h1 className="text-white font-extralight tracking-[0.2em] uppercase text-sm">
+                    Forest <span className="text-cyan-500 font-medium">Observer</span>
+                </h1>
+                <button
+                    onClick={logout}
+                    className="text-[10px] text-slate-400 hover:text-white transition-colors border border-slate-700 px-3 py-1 rounded uppercase tracking-tighter"
+                >
+                    Disconnect
+                </button>
             </nav>
 
-            {/* Main Content */}
-            <main className="max-w-7xl mx-auto px-6 py-12">
-                <header className="mb-16">
-                    <h1 className="text-4xl font-extralight tracking-tight text-white mb-2">
-                        Entity Management
-                    </h1>
-                    <p className="text-slate-500 font-light text-sm">
-                        Real-time synchronization with PostgreSQL via TypeORM Layer.
-                    </p>
-                </header>
+            {/* Map container */}
+            <div ref={mapContainer} className="w-full h-full" />
 
-                {/* User Grid */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    {loading ? (
-                        <div className="col-span-full py-20 text-center border border-dashed border-slate-800 rounded-xl">
-              <span className="text-slate-600 animate-pulse font-light uppercase tracking-widest text-xs">
-                Synchronizing Data...
-              </span>
-                        </div>
-                    ) : (
-                        users.map((user) => (
-                            <div
-                                key={user.id}
-                                className="group relative bg-slate-900/40 border border-slate-800 p-6 rounded-xl hover:border-cyan-500/50 transition-all duration-500 shadow-2xl"
-                            >
-                                <div className="flex justify-between items-start mb-8">
-                                    <div className="h-10 w-10 bg-slate-800 rounded-lg flex items-center justify-center text-cyan-400 font-mono text-xs">
-                                        0{user.id}
-                                    </div>
-                                    <span className={`text-[10px] px-2 py-0.5 rounded-full border uppercase tracking-widest ${
-                                        user.isActive ? 'border-emerald-500/30 text-emerald-400' : 'border-rose-500/30 text-rose-400'
-                                    }`}>
-                    {user.isActive ? 'Active' : 'Standby'}
-                  </span>
-                                </div>
-
-                                <h3 className="text-xl font-light text-slate-100 group-hover:text-cyan-400 transition-colors">
-                                    {user.username}
-                                </h3>
-                                <p className="text-slate-600 text-[10px] uppercase tracking-widest mt-1">
-                                    Database Record Entry
-                                </p>
-
-                                {/* Subtle Hover Decor */}
-                                <div className="absolute bottom-0 left-0 h-[1px] w-0 bg-cyan-500 group-hover:w-full transition-all duration-700" />
-                            </div>
-                        ))
-                    )}
+            {/* Loading status indicator */}
+            {!isLoaded && (
+                <div className="absolute inset-0 flex items-center justify-center bg-slate-950 z-20">
+                    <span className="text-cyan-500 animate-pulse font-mono text-xs tracking-widest uppercase">
+                        Establishing Satellite Link...
+                    </span>
                 </div>
-            </main>
-
-            {/* Footer Branding */}
-            <footer className="fixed bottom-8 left-6">
-                <p className="text-[10px] text-slate-700 font-mono rotate-90 origin-left tracking-[0.3em] uppercase">
-                    Autonomous Entity Control
-                </p>
-            </footer>
+            )}
         </div>
     );
 }

@@ -38,6 +38,14 @@ export class AuthService {
         return this.generateToken(user);
     }
 
+    async updateUserView(userId: number, view: { lat: number; lng: number; zoom: number }) {
+        return await this.userRepository.update(userId, {
+            lastLatitude: view.lat,
+            lastLongitude: view.lng,
+            lastZoom: view.zoom,
+        });
+    }
+
     private generateToken(user: User) {
         const payload = { email: user.email, sub: user.id };
         return {

@@ -1,0 +1,21 @@
+frontend/src/
+├── app/                  # Next.js App Router 核心
+│   ├── login/            # 新建：登录页面
+│   │   └── page_proto.tsx
+│   ├── dashboard/        # 新建：地图主界面
+│   │   └── page_proto.tsx
+│   ├── layout.tsx
+│   └── page_proto.tsx          # 根路由重定向逻辑
+├── components/           # 新建
+│   ├── Map/              # 地图组件
+│   └── Auth/             # 登录/注册表单
+├── services/             # 新建：封装 api.ts
+└── context/              # 新建：AuthContext.tsx
+
+
+frontend/
+├── app/             # 路由与页面 (Dashboard, Login)
+├── components/      # 【新建】地图、UI组件
+├── lib/             # 【新建】API与工具函数
+├── public/          # 静态资源
+└── node_modules/
