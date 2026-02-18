@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards, Param } from '@nestjs/common'; // 修复：添加了 Param 导入
+import { Controller, Get, Post, Body, Query, UseGuards, Param } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ForestParcel } from './forest.entity';
@@ -26,6 +26,50 @@ export class ForestController {
 
         // Ensure we return the raw many results which is already [{name: '...'}, ...]
         return results;
+    }
+
+    @UseGuards(JwtAuthGuard)
+    @Post('analyze')
+    async analyzePolygon(@Body() geometry: any) {
+        // Convert input GeoJSON to a PostGIS geometry string
+        const inputGeoJson = JSON.stringify(geometry);
+
+        // 1. Calculate Total Area of the drawn polygon (in Hectares)
+        // We cast to geography to get accurate meters, then divide by 10,000
+        const totalSizeQuery = `
+            SELECT ST_Area(ST_GeomFromGeoJSON($1)::geography) / 10000 as "totalHa"
+        `;
+        const sizeResult = await this.forestRepo.query(totalSizeQuery, [inputGeoJson]);
+        const totalUserArea = sizeResult[0].totalHa;
+
+        // 2. Intersect with Forests to get Species Distribution
+        // This is the magic: ST_Intersection calculates the exact overlap shape
+        const speciesStats = await this.forestRepo.query(`
+            SELECT 
+                "speciesName",
+                SUM(ST_Area(ST_Intersection(geom, ST_GeomFromGeoJSON($1))::geography)) / 10000 as "areaHa"
+            FROM forest_parcels
+            WHERE ST_Intersects(geom, ST_GeomFromGeoJSON($1))
+            GROUP BY "speciesName"
+            ORDER BY "areaHa" DESC
+        `, [inputGeoJson]);
+
+        // 3. Get intersecting Commune/Zone names
+        const communes = await this.forestRepo.query(`
+            SELECT DISTINCT "communeName"
+            FROM forest_parcels
+            WHERE ST_Intersects(geom, ST_GeomFromGeoJSON($1))
+            LIMIT 5
+        `, [inputGeoJson]);
+
+        return {
+            totalAnalysisArea: totalUserArea,
+            species: speciesStats.map((s: any) => ({
+                name: s.speciesName,
+                area: parseFloat(s.areaHa)
+            })),
+            communes: communes.map((c: any) => c.communeName)
+        };
     }
 
     @UseGuards(JwtAuthGuard)
