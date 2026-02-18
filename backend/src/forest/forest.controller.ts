@@ -25,8 +25,9 @@ export class ForestController {
                 properties: {
                     id: p.id,
                     ign_id: p.ign_id,
-                    species: p.speciesName,
-                    area: p.areaHa,
+                    species: p.speciesName ? p.speciesName.trim() : 'Unknown',
+                    // area: p.areaHa,
+                    area: Number(p.areaHa),
                 }
             }))
         };

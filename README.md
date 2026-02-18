@@ -1,72 +1,86 @@
-🌌 Full-Stack Nexus: NestJS + Next.js + TypeORM
-A high-fidelity, containerized full-stack ecosystem designed for scalability and performance. This project integrates a robust NestJS backend, a modern Next.js frontend, and a PostgreSQL database managed through TypeORM, all orchestrated within a professional Docker environment.
+🌌 Symbiose OS: High-Fidelity GIS Ecosystem
+Symbiose OS is a professional-grade, containerized full-stack ecosystem designed for high-precision geospatial visualization and secure data management. Engineered with a NestJS backbone and a Next.js neural interface, this system transforms raw forest inventory data into an interactive, encrypted intelligence terminal.
 
-🛠 Tech Stack
+🛠 Advanced Tech Stack
 Frontend: Next.js 15 (App Router, TypeScript, Tailwind CSS)
 
-Backend: NestJS (Modular Architecture, TypeORM)
+Backend: NestJS (Modular Architecture, TypeORM, Passport JWT)
 
-Database: PostgreSQL 15 (Relational Data Persistence)
+Spatial Database: PostgreSQL 15 + PostGIS (Geospatial Persistence)
 
-DevOps: Docker Compose (Multi-stage builds, Container Healthchecks)
+Mapping Engine: Mapbox GL JS (High-performance vector rendering)
 
-Version Control: Unified Monorepo structure
+DevOps: Docker Compose (Multi-stage builds, Container Orchestration)
 
 🏗 System Architecture
-The project utilizes a Monorepo structure where frontend and backend are decoupled but share the same Docker orchestration network.
+The project utilizes a decoupled Monorepo structure, synchronized through a secure Docker bridge network.
 
-Persistence Layer: PostgreSQL managed via TypeORM with auto-synchronization enabled for development.
+Persistence Layer: PostgreSQL/PostGIS handles complex geometry types, utilizing MultiPolygon schemas for land parcels.
 
-Service Layer: NestJS provides a RESTful API with strict DTO validation and dependency injection.
+Service Layer: A modular NestJS API providing strict DTO validation, JWT-based "Gatekeeper" authentication, and spatial data streaming.
 
-Presentation Layer: Next.js 15 utilizes a "Standby" build mode for high-performance delivery, connecting to the backend via a secure Docker bridge.
+Presentation Layer: A "Symbiose OS" themed Next.js interface featuring real-time state persistence (Lat/Lng/Zoom) and dynamic Mapbox layers.
+
+🧪 Key Features & Accomplishments
+🔒 Secure Access Control
+Implemented a robust JWT (JSON Web Token) strategy for stateless authentication.
+
+Integrated Bcrypt password hashing with zero-knowledge storage in the database.
+
+🗺 Spatial Data Engineering
+ETL Pipeline: Developed a recursive ingestion script to process .shp and .dbf files for multiple departments (D075, D092, etc.).
+
+Coordinate Transformation: Automated the high-precision translation from Lambert-93 (EPSG:2154) to WGS-84 (EPSG:4326) for global compatibility.
+
+🧠 Real-Time State Persistence
+The system monitors user interaction through moveend listeners, persisting the map viewpoint to the PostgreSQL user profile in real-time.
+
+Users return to their exact "Observer Coordinate" upon re-authentication.
+
+🎨 Visual Identity: "The Observer"
+The dashboard is designed with a "Cold & Minimalist" aesthetic, reflecting a high-dimensional control terminal:
+
+Primary Palette: Slate-950 (Deep Void Background), Cyan-500 (Neural Accents).
+
+Interface: Glassmorphism effects with backdrop-blur-xl and animated "Grid & Glow" backgrounds.
+
+Visualizations: Custom forest layers using Match expressions to color-code species (Oak, Beech, Pine) dynamically.
 
 🚀 Quick Start (Dockerized)
-Ensure you have Docker Desktop and pnpm installed.
+Ensure you have Docker Desktop and Mapbox Access Token ready.
 
-Clone the Repository
+Clone & Configure
 
 Bash
 git clone https://github.com/Surtalaevateinn/NestJS_Proj.git
-cd your-repo-name
+cd NestJS_Proj
+Add your NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN to docker-compose.yml.
+
 Infrastructure Initialization
-Launch the entire stack (Database, Backend, Frontend) with one command:
 
 Bash
 docker-compose up --build -d
-Access the Ecosystem
+Data Ingestion
 
-Frontend Dashboard: http://localhost:3001
+Bash
+docker exec -it nest_backend npx ts-node src/scripts/seed-forest.ts
+Access Terminal
+
+Frontend: http://localhost:3001
 
 Backend API: http://localhost:3000
 
-Database: localhost:5432 (User/Pass: postgres/postgres)
-
-🔧 Challenges Overcome
-Optimized Build Context: Implemented .dockerignore strategies to exclude node_modules, reducing build context transfer from 250MB+ to <1MB.
-
-Service Orchestration: Integrated Docker Healthchecks to ensure the NestJS backend waits for the PostgreSQL engine to be fully "Accepting Connections" before initialization.
-
-Type-Safe Environments: Refactored configuration modules to handle strict TypeScript checks for environment variables, preventing runtime crashes during production builds.
-
-🎨 Visual Identity
-The dashboard features a custom Dark Mode implementation:
-
-Primary Palette: Slate-950 (Background), Cyan-500 (Accents).
-
-Typography: Extralight tracking for a sophisticated, professional feel.
-
-Interactions: Subtle backdrop blurs and smooth transition states.
-
-🗺 Roadmap
+📈 Roadmap
 [x] Full-Stack Containerization
 
-[x] Database Healthcheck & Orchestration
+[x] PostGIS Spatial Integration
 
-[x] Minimalist UI Dashboard
+[x] JWT Authentication & Authorization
 
-[ ] JWT Authentication & User Authorization
+[x] Real-time Map State Persistence
 
-[ ] Swagger API Documentation Integration
+[ ] Advanced Spatial Queries (Bounding Box Filtering)
 
 [ ] Internationalization (i18n) for Global Markets
+
+[ ] Swagger API Documentation Integration
