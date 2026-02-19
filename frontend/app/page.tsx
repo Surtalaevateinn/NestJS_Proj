@@ -48,6 +48,16 @@ export default function MapPage() {
     const [analysisResult, setAnalysisResult] = useState<any | null>(null);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
 
+    // ── New: LiDAR integration states ───────────────────────────────────────
+    const [lidarResult, setLidarResult] = useState<{
+        min: number;
+        max: number;
+        mean: number;
+        unit: string;
+    } | null>(null);
+    const [isLidarAnalyzing, setIsLidarAnalyzing] = useState(false);
+    // ────────────────────────────────────────────────────────────────────────
+
     // [Visual Feedback] Track if user is currently drawing
     const [isDrawingMode, setIsDrawingMode] = useState(false);
 
@@ -212,30 +222,48 @@ export default function MapPage() {
         setIsDrawingMode(false);
 
         const geometry = e.features[0].geometry;
+
+        // ── New: Start both analyses in parallel ─────────────────────────────
         setIsAnalyzing(true);
+        setIsLidarAnalyzing(true);
         setAnalysisResult(null);
+        setLidarResult(null);
+        // ────────────────────────────────────────────────────────────────────
 
         // Store geometry temporarily for zoom-to-bounds feature
         const currentGeometry = geometry;
 
         try {
-            const data = await fetchWithAuth('/forests/analyze', {
+            // 1. Forest / species / area analysis (POST geometry)
+            const forestPromise = fetchWithAuth('/forests/analyze', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(geometry),
             });
-            // Attach original geometry to result for navigation
-            setAnalysisResult({ ...data, _geometry: currentGeometry });
+
+            // 2. LiDAR canopy height statistics
+            //    Currently global file – later can pass bbox / centroid / tile id
+            const lidarPromise = fetchWithAuth('/lidar/forest-height');
+
+            const [forestData, lidarData] = await Promise.all([
+                forestPromise,
+                lidarPromise,
+            ]);
+
+            setAnalysisResult({ ...forestData, _geometry: currentGeometry });
+            setLidarResult(lidarData);
         } catch (err) {
             console.error('Analysis request failed:', err);
             setErrorMsg("Computation Failed: Analysis service unreachable.");
         } finally {
             setIsAnalyzing(false);
+            setIsLidarAnalyzing(false);
         }
     };
 
     const handleDrawDelete = () => {
         setAnalysisResult(null);
+        setLidarResult(null);           // ← new
     };
 
     /**
@@ -359,28 +387,9 @@ export default function MapPage() {
         });
 
         map.current.on('load', async () => {
-            // map.current?.addSource('cadastre', {
-            //     type: 'vector',
-            //     tiles: [
-            //         'https://paca.pigma.org/geoserver/gwc/service/wmts?REQUEST=GetTile&SERVICE=WMTS&VERSION=1.0.0&LAYER=cadastre:parcelle&STYLE=&TILEMATRIXSET=EPSG:900913&TILEMATRIX=EPSG:900913:{z}&TILEROW={y}&TILECOL={x}&FORMAT=application/vnd.mapbox-vector-tile',
-            //     ],
-            //     // [Layer Switcher] Removed strict minzoom logic here to allow manual toggle (source handles fetching)
-            //     minzoom: 14,
-            //     maxzoom: 22,
-            // });
-            // map.current?.addSource('cadastre', {
-            //     type: 'vector',
-            //     tiles: [
-            //         'https://cadastre.data.gouv.fr/tuiles/cadastre/{z}/{x}/{y}.pbf'
-            //         // 'https://vectortiles.cadastre.data.gouv.fr/cadastre/{z}/{x}/{y}.pbf'
-            //     ],
-            //     minzoom: 13,
-            //     maxzoom: 20,
-            //     promoteId: 'id',
-            // });
             map.current?.addSource('cadastre', {
                 type: 'vector',
-                url: 'https://openmaptiles.geo.data.gouv.fr/data/cadastre.json'  // ← 关键！自动带正确 tiles/minzoom 等
+                url: 'https://openmaptiles.geo.data.gouv.fr/data/cadastre.json'
             });
 
             map.current?.addLayer({
@@ -413,7 +422,6 @@ export default function MapPage() {
                 type: 'fill',
                 source: 'forests',
                 layout: {
-                    // [Layer Switcher] Initialize based on React state
                     'visibility': layerVisibility.forests ? 'visible' : 'none'
                 },
                 paint: {
@@ -442,7 +450,6 @@ export default function MapPage() {
             await loadVisibleForests();
             setIsLoaded(true);
 
-            // ... [Mouse Events] ...
             map.current?.on('mouseenter', 'forests-layer', () => {
                 map.current!.getCanvas().style.cursor = 'pointer';
             });
@@ -497,7 +504,6 @@ export default function MapPage() {
                         await loadVisibleForests();
                     } catch (error) {
                         console.error('Debounced view update failed:', error);
-                        // [Robustness] Non-critical error, maybe just log or small toast
                     }
                 }, 300);
             }
@@ -548,7 +554,6 @@ export default function MapPage() {
                     </div>
                 </div>
 
-                {/* [Layer Switcher] New Control Panel next to disconnect */}
                 <div className="flex items-center gap-6">
                     <div className="flex gap-2 bg-slate-900/50 border border-white/5 rounded px-3 py-1.5 backdrop-blur-sm">
                         <label className="flex items-center gap-2 cursor-pointer group">
@@ -584,7 +589,6 @@ export default function MapPage() {
 
             <div ref={mapContainer} className="w-full h-full grayscale-[0.2] brightness-[0.8] contrast-[1.1]" />
 
-            {/* [Visual Feedback] Drawing Mode Hint Overlay */}
             {isDrawingMode && (
                 <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-30 pointer-events-none">
                     <div className="bg-slate-950/80 border border-cyan-500/40 px-6 py-3 rounded-full backdrop-blur-md shadow-[0_0_30px_rgba(6,182,212,0.2)]">
@@ -596,7 +600,6 @@ export default function MapPage() {
                 </div>
             )}
 
-            {/* [Robustness] Error Toast Notification */}
             {errorMsg && (
                 <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 z-50 animate-in fade-in slide-in-from-bottom-4 duration-300">
                     <div className="bg-red-950/90 border border-red-500/50 px-4 py-2 rounded shadow-lg flex items-center gap-3 backdrop-blur-md">
@@ -607,7 +610,6 @@ export default function MapPage() {
                 </div>
             )}
 
-            {/* Left Hierarchy Panel */}
             <div className="absolute top-24 left-6 z-20 w-64 space-y-2">
                 <div className="bg-slate-900/80 backdrop-blur-xl border border-white/10 p-4 rounded-sm shadow-2xl transition-all hover:border-cyan-500/30">
                     <label className="text-[8px] text-cyan-500 uppercase tracking-[0.2em] mb-3 block border-b border-cyan-500/20 pb-1 font-bold">
@@ -651,7 +653,6 @@ export default function MapPage() {
                 </div>
             </div>
 
-            {/* Draggable Analysis Result Panel */}
             {(isAnalyzing || analysisResult) && initialCenter && (
                 <div
                     ref={analysisPanelRef}
@@ -664,11 +665,12 @@ export default function MapPage() {
                     <div className="flex justify-between items-center border-b border-cyan-500/20 pb-3 mb-4">
                         <h3 className="text-sm text-cyan-400 font-bold tracking-[0.15em] uppercase">Sector Intelligence</h3>
                         <div className="flex items-center gap-3">
-                            {isAnalyzing && <div className="w-2 h-2 bg-cyan-500 rounded-full animate-ping" />}
+                            {(isAnalyzing || isLidarAnalyzing) && <div className="w-2 h-2 bg-cyan-500 rounded-full animate-ping" />}
                             <button
                                 onClick={() => {
                                     if (drawRef.current) drawRef.current.deleteAll();
                                     setAnalysisResult(null);
+                                    setLidarResult(null);
                                     setPanelOffset({ x: 0, y: 0 });
                                 }}
                                 className="text-xs text-slate-400 hover:text-red-400 transition-colors px-2 py-1 rounded hover:bg-slate-800/50"
@@ -678,9 +680,9 @@ export default function MapPage() {
                         </div>
                     </div>
 
-                    {isAnalyzing ? (
+                    {isAnalyzing || isLidarAnalyzing ? (
                         <div className="text-center py-6 text-sm text-slate-400 font-mono tracking-wide">
-                            COMPUTING GEOMETRIC INTERSECTIONS...
+                            COMPUTING GEOMETRIC & VERTICAL INTERSECTIONS...
                         </div>
                     ) : (
                         <div className="space-y-5 text-sm">
@@ -709,9 +711,42 @@ export default function MapPage() {
                                 </div>
                             </div>
 
+                            {/* ── New: LiDAR CHM (Canopy Height Model) statistics ──────── */}
+                            <div className="border-t border-white/5 pt-4 my-2">
+                                <p className="text-[10px] text-cyan-500 uppercase tracking-widest mb-3 font-bold">
+                                    LiDAR Altitude Analysis (CHM)
+                                </p>
+
+                                {isLidarAnalyzing ? (
+                                    <div className="animate-pulse text-[10px] text-slate-500 font-mono">
+                                        SCANNING VERTICAL STRUCTURE...
+                                    </div>
+                                ) : lidarResult ? (
+                                    <div className="grid grid-cols-3 gap-2 bg-slate-950/50 p-3 rounded border border-white/5">
+                                        <div className="text-center">
+                                            <p className="text-[8px] text-slate-500 uppercase">Min</p>
+                                            <p className="font-mono text-xs text-slate-300">{lidarResult.min}m</p>
+                                        </div>
+                                        <div className="text-center border-x border-white/10">
+                                            <p className="text-[8px] text-cyan-500 uppercase font-bold">Average</p>
+                                            {/*<p className="font-mono text-sm text-cyan-400">{lidarResult.mean.toFixed(1)}m</p>*/}
+                                            <p className="font-mono text-sm text-cyan-400">
+                                                {typeof lidarResult.mean === 'number' ? lidarResult.mean.toFixed(1) : '0.0'}m
+                                            </p>
+                                        </div>
+                                        <div className="text-center">
+                                            <p className="text-[8px] text-slate-500 uppercase">Max</p>
+                                            <p className="font-mono text-xs text-slate-300">{lidarResult.max}m</p>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <p className="text-[10px] text-slate-600 italic">No vertical data for this sector</p>
+                                )}
+                            </div>
+                            {/* ─────────────────────────────────────────────────────────── */}
+
                             <div className="border-t border-white/5 pt-3">
                                 <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Impacted Administrative Zones</p>
-                                {/* [Visual Feedback] Added Click Handler to Zoom to Bounds */}
                                 <p
                                     onClick={handleZoomToImpact}
                                     className="text-slate-300 leading-relaxed text-[13px] clickable-text cursor-pointer hover:text-cyan-400 hover:underline decoration-dashed underline-offset-4 transition-colors"
@@ -725,11 +760,9 @@ export default function MapPage() {
                 </div>
             )}
 
-            {/* Metrics Dashboard */}
             <div className="absolute top-24 right-6 z-10 w-56 space-y-4">
                 <div className="bg-slate-900/60 backdrop-blur-xl border border-white/5 p-4 rounded-sm shadow-2xl">
                     <p className="text-[8px] text-slate-500 uppercase tracking-tighter mb-1">Total Monitored Area</p>
-                    {/* [Micro-interaction] Opacity pulse during data fetch/debounce */}
                     <h3 className={`text-xl text-cyan-400 font-mono tracking-tighter transition-opacity duration-300 ${isFetchingSpatial ? 'opacity-50' : 'opacity-100'}`}>
                         {stats.totalArea.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                         <span className="text-[10px] text-slate-500 uppercase font-sans ml-1">Ha</span>
@@ -740,7 +773,6 @@ export default function MapPage() {
                 <div className="bg-slate-900/60 backdrop-blur-xl border border-white/5 p-4 rounded-sm shadow-2xl">
                     <div className="flex justify-between items-center mb-1">
                         <p className="text-[8px] text-slate-500 uppercase tracking-tighter">Localized Clusters</p>
-                        {/* [Micro-interaction] Loading spinner for spatial fetch */}
                         {isFetchingSpatial && <div className="w-2 h-2 border border-cyan-500 border-t-transparent rounded-full animate-spin"/>}
                     </div>
                     <h3 className="text-xl text-slate-200 font-mono tracking-tighter">
@@ -755,7 +787,6 @@ export default function MapPage() {
                 </div>
             </div>
 
-            {/* Vegetation Legend */}
             <div className="absolute bottom-10 left-6 z-10 bg-slate-900/60 backdrop-blur-2xl border border-white/10 p-5 rounded-sm shadow-[0_20px_50px_rgba(0,0,0,0.5)] max-w-[200px]">
                 <h4 className="text-[9px] text-slate-400 uppercase tracking-[0.2em] mb-4 font-bold border-l-2 border-cyan-500 pl-2">
                     Vegetation Index
@@ -783,7 +814,6 @@ export default function MapPage() {
                 </div>
             </div>
 
-            {/* Loader */}
             {!isLoaded && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950 z-50">
                     <div className="w-12 h-12 border-2 border-cyan-500/20 border-t-cyan-500 rounded-full animate-spin mb-4" />

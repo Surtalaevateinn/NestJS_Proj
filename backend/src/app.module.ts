@@ -6,6 +6,8 @@ import { User } from './user.entity';
 import {ForestParcel} from "./forest/forest.entity";
 import { ForestController } from './forest/forest.controller';
 import { AuthModule } from './auth/auth.module';
+import { LidarModule } from './lidar/lidar.module';
+import {LidarController} from "./lidar/lidar.controller";
 
 @Module({
   imports: [
@@ -22,6 +24,7 @@ import { AuthModule } from './auth/auth.module';
     }),
     TypeOrmModule.forFeature([User, ForestParcel]),
     AuthModule,
+    LidarModule,
   ],
   controllers: [AppController, ForestController],
   providers: [AppService],
