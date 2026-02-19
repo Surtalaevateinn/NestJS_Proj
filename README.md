@@ -127,10 +127,10 @@ Due to the large size of the datasets, they are not included in the repository.
 
 1. Create a `data/` directory at the root of the project.
 2. **BD Forêt (Core)**  
-   Download the shapefiles and place them in:
+   Download the shapefiles from **https://geoservices.ign.fr/bdforet#telechargementv2** and place them in:
    - `./data/BDV2/`
 3. **LiDAR (Bonus B)**  
-   Download **MNH GeoTIFF** files from **IGN LiDAR HD** and place them in:
+   Download **MNH GeoTIFF** files from **https://cartes.gouv.fr/telechargement/IGNF_MNH-LIDAR-HD** and place them in:
    - `./data/lidar/`
 
 ---
