@@ -8,7 +8,7 @@
   <em>Fig 1. The main geospatial intelligence terminal visualizing BD Forêt bio-data.</em>
 </p>
 
-A production-ready, full-stack **geospatial intelligence terminal** designed to visualize and analyze French forest data (**BD Forêt**) and **LiDAR canopy heights (CHM)**. Built for the **Symbiose Technical Challenge**.
+A production-ready, full-stack **geospatial intelligence terminal** designed to visualize and analyze French forest data (**BD Forêt**) and **LiDAR canopy heights (CHM)**. Implementation of the **Symbiose Full-Stack Technical Challenge — Forest BD Viewer** (all core + Bonus A/B completed in ~25 hours).
 
 ---
 
@@ -207,3 +207,36 @@ To keep performance strong and respect hardware limits:
 - **Core** (Auth, Map, API, DevOps): ~16 hours  
 - **Bonus** (Polygon Analysis, LiDAR Data Engineering): ~9 hours  
 - **Total**: ~25 hours
+
+---
+
+## 🚀 Future Outlook & Roadmap
+
+The current implementation is fully functional locally via Docker Compose and demonstrates production-grade architecture (PostGIS spatial queries, JWT security, on-the-fly LiDAR raster masking, real-time GeoJSON streaming, etc.).
+
+### Remote Deployment (Production-Ready Plan)
+
+Full remote deployment of this full-stack geospatial application (Next.js frontend + NestJS backend + PostGIS database + Python LiDAR engine) is completely understood and ready to execute. The planned production setup would include:
+
+- **Frontend**: Vercel (zero-config Next.js hosting, automatic CI/CD from GitHub, global CDN for Mapbox tiles)
+- **Backend**: Render / Railway / Fly.io (Node.js Web Service with persistent disk for Python/GDAL dependencies)
+- **Database**: Render PostgreSQL (with PostGIS extension enabled via `CREATE EXTENSION postgis;`) or Supabase (managed PostGIS)
+- **Data Volumes**: Persistent storage for LiDAR GeoTIFFs (Render Disks / S3-compatible bucket) to avoid re-downloading
+- **Environment Variables**: Secure management of `NEXT_PUBLIC_MAPBOX_TOKEN`, `JWT_SECRET`, `DATABASE_URL`, etc.
+- **CI/CD**: GitHub Actions workflow for automated build/test/deploy on push to main
+- **Scaling Considerations**: Horizontal scaling for backend (multiple instances), Redis for caching bbox queries if traffic grows
+
+**Why not deployed for this submission?**  
+Due to the significant data volume (BD Forêt shapefiles + multiple LiDAR HD GeoTIFF tiles for departments 75/77/78/91/92, totaling several GB even for subset), free-tier resources (Render/ Vercel free plan limits on storage, bandwidth, and build time) do not support reliable long-term hosting without suspension or quota exhaustion during evaluation.
+
+The local Docker setup provides a complete, reproducible demonstration environment that fully satisfies the challenge requirements (“a working local setup via Docker is also fine”).
+
+Production deployment (with proper paid tier or self-hosted VPS) would be straightforward and can be completed in under 2 hours once data is optimized or moved to cloud storage (e.g., S3 + CloudFront for tiles).
+
+Future production version would include:
+- Auto-scaling + CDN for heavy raster/GeoJSON payloads
+- Monitoring (Sentry + Prometheus)
+- Backup strategy for PostGIS + LiDAR files
+
+This project is architected with production deployment in mind from day one.
+
