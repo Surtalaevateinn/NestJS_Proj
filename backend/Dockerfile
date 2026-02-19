@@ -13,6 +13,7 @@ RUN apk add --no-cache \
 RUN python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 RUN pip install --no-cache-dir rasterio numpy
+RUN pip install --no-cache-dir rasterio numpy shapely
 
 WORKDIR /app
 

@@ -243,7 +243,12 @@ export default function MapPage() {
 
             // 2. LiDAR canopy height statistics
             //    Currently global file – later can pass bbox / centroid / tile id
-            const lidarPromise = fetchWithAuth('/lidar/forest-height');
+            // const lidarPromise = fetchWithAuth('/lidar/forest-height');
+            const lidarPromise = fetchWithAuth('/lidar/forest-height', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(geometry), // Input polygon
+            });
 
             const [forestData, lidarData] = await Promise.all([
                 forestPromise,

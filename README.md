@@ -1,86 +1,209 @@
-🌌 Symbiose OS: High-Fidelity GIS Ecosystem
-Symbiose OS is a professional-grade, containerized full-stack ecosystem designed for high-precision geospatial visualization and secure data management. Engineered with a NestJS backbone and a Next.js neural interface, this system transforms raw forest inventory data into an interactive, encrypted intelligence terminal.
+# Symbiose Forest BD Viewer 🌲
 
-🛠 Advanced Tech Stack
-Frontend: Next.js 15 (App Router, TypeScript, Tailwind CSS)
+<p align="center">
+  <img src="./public/docs/symbiose-os-terminal.png" width="950"/>
+</p>
 
-Backend: NestJS (Modular Architecture, TypeORM, Passport JWT)
+<p align="center">
+  <em>Fig 1. The main geospatial intelligence terminal visualizing BD Forêt bio-data.</em>
+</p>
 
-Spatial Database: PostgreSQL 15 + PostGIS (Geospatial Persistence)
+A production-ready, full-stack **geospatial intelligence terminal** designed to visualize and analyze French forest data (**BD Forêt**) and **LiDAR canopy heights (CHM)**. Built for the **Symbiose Technical Challenge**.
 
-Mapping Engine: Mapbox GL JS (High-performance vector rendering)
+---
 
-DevOps: Docker Compose (Multi-stage builds, Container Orchestration)
+## ✨ Features
 
-🏗 System Architecture
-The project utilizes a decoupled Monorepo structure, synchronized through a secure Docker bridge network.
+- **Authentication**: Secure JWT-based registration, login, and session management.
+- **Interactive Geospatial Mapping**: Mapbox GL JS integration with a custom *glassmorphism* UI.
+- **Macro → Micro Navigation**: Seamless `FlyTo` navigation **Region → Department → Commune**.
+- **Vector Layers**
+  - **BD Forêt (Bio-Data)**: Tree species visualization filtered dynamically via **PostGIS bounding-box** queries.
 
-Persistence Layer: PostgreSQL/PostGIS handles complex geometry types, utilizing MultiPolygon schemas for land parcels.
+    <p align="center">
+      <img src="./public/docs/bounding-box-query-logic.png" width="900"/>
+    </p>
+    <p align="center">
+      <em>Diagram — Bounding box query logic with viewport guard + debounce.</em>
+    </p>
 
-Service Layer: A modular NestJS API providing strict DTO validation, JWT-based "Gatekeeper" authentication, and spatial data streaming.
+  - **Cadastre**: Official **Etalab** vector tiles (TileJSON), loaded at `minzoom: 13`.
+- **State Persistence**: Debounced saving of user map view (**latitude / longitude / zoom**).
+- **Bonus A — Polygon Spatial Analysis**: Real-time intersections to compute vegetation composition and exact area inside a user-drawn polygon.
+- **Bonus B — LiDAR CHM Integration**: Python-based spatial indexing + masking engine to extract localized CHM stats (**min / max / avg heights**) directly from IGN GeoTIFFs.
 
-Presentation Layer: A "Symbiose OS" themed Next.js interface featuring real-time state persistence (Lat/Lng/Zoom) and dynamic Mapbox layers.
+  <p align="center">
+    <img src="./public/docs/lidar-chm-masking.png" width="900"/>
+  </p>
+  <p align="center">
+    <em>Diagram — Dynamic CHM masking pipeline (Node ↔ Python ↔ GeoTIFF) and statistics extraction.</em>
+  </p>
 
-🧪 Key Features & Accomplishments
-🔒 Secure Access Control
-Implemented a robust JWT (JSON Web Token) strategy for stateless authentication.
+---
 
-Integrated Bcrypt password hashing with zero-knowledge storage in the database.
+## 🖼️ Screenshots
 
-🗺 Spatial Data Engineering
-ETL Pipeline: Developed a recursive ingestion script to process .shp and .dbf files for multiple departments (D075, D092, etc.).
+### Micro-Detail & Cadastre
 
-Coordinate Transformation: Automated the high-precision translation from Lambert-93 (EPSG:2154) to WGS-84 (EPSG:4326) for global compatibility.
+<p align="center">
+  <img src="./public/docs/micro-detail-cadastre.png" width="950"/>
+</p>
 
-🧠 Real-Time State Persistence
-The system monitors user interaction through moveend listeners, persisting the map viewpoint to the PostgreSQL user profile in real-time.
+<p align="center">
+  <em>Fig 2. Micro-level navigation with official Etalab Cadastre vector tiles and hover states.</em>
+</p>
 
-Users return to their exact "Observer Coordinate" upon re-authentication.
+### Sector Intelligence (Polygon + LiDAR)
 
-🎨 Visual Identity: "The Observer"
-The dashboard is designed with a "Cold & Minimalist" aesthetic, reflecting a high-dimensional control terminal:
+<p align="center">
+  <img src="./public/docs/sector-intelligence.png" width="950"/>
+</p>
 
-Primary Palette: Slate-950 (Deep Void Background), Cyan-500 (Neural Accents).
+<p align="center">
+  <em>Fig 3. Real-time geometric intersection and LiDAR Canopy Height Model (CHM) spatial masking.</em>
+</p>
 
-Interface: Glassmorphism effects with backdrop-blur-xl and animated "Grid & Glow" backgrounds.
+---
 
-Visualizations: Custom forest layers using Match expressions to color-code species (Oak, Beech, Pine) dynamically.
+## 🛠 Technology Stack
 
-🚀 Quick Start (Dockerized)
-Ensure you have Docker Desktop and Mapbox Access Token ready.
+- **Frontend**: Next.js 15 (App Router), React, Mapbox GL JS, Tailwind CSS  
+- **Backend**: NestJS, TypeORM, PostGIS (PostgreSQL 15)  
+- **Data Engineering**: Python 3, Rasterio, Shapely, NumPy, GDAL  
+- **DevOps**: Docker, Docker Compose, Monorepo structure  
 
-Clone & Configure
+<p align="center">
+  <img src="./public/docs/architecture-flow.png" width="950"/>
+</p>
 
-Bash
-git clone https://github.com/Surtalaevateinn/NestJS_Proj.git
-cd NestJS_Proj
-Add your NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN to docker-compose.yml.
+<p align="center">
+  <em>Diagram — The Architecture Flow (full-stack data flow & component collaboration).</em>
+</p>
 
-Infrastructure Initialization
+---
 
-Bash
+## 📂 Project Structure
+
+```text
+Symbiose-Forest-Viewer/
+├── backend/
+│   ├── src/
+│   │   ├── auth/              # JWT Authentication & Guards
+│   │   ├── forest/            # PostGIS Entities & Spatial Controllers
+│   │   ├── lidar/             # Python ↔ Node.js bridge for raster analysis
+│   │   ├── scripts/           # ETL pipelines (seed-forest.ts)
+│   │   └── main.ts            # NestJS entry point & Swagger config
+│   ├── Dockerfile             # Node (Alpine) + Python/GDAL environment
+│   └── package.json
+├── frontend/
+│   ├── app/                   # Next.js routes & layouts
+│   ├── components/            # React UI components & Mapbox logic
+│   ├── lib/                   # API interceptors & auth utils
+│   ├── Dockerfile             # Multi-stage Next.js build
+│   └── package.json
+├── data/                      # ⚠️ Ignored in git; must be created manually
+│   ├── BDV2/                  # BD Forêt Shapefiles (.shp, .dbf, .prj)
+│   └── lidar/                 # IGN LiDAR HD GeoTIFFs (.tif)
+├── public/
+│   └── docs/                  # ✅ README images & diagrams (tracked in git)
+├── docker-compose.yml         # Container orchestration
+└── README.md
+```
+
+---
+
+## 🚀 Getting Started
+
+### Prerequisites
+
+- **Docker** and **Docker Compose**
+- A valid **Mapbox access token**
+
+---
+
+### 1) Data Preparation
+
+Due to the large size of the datasets, they are not included in the repository.
+
+1. Create a `data/` directory at the root of the project.
+2. **BD Forêt (Core)**  
+   Download the shapefiles and place them in:
+   - `./data/BDV2/`
+3. **LiDAR (Bonus B)**  
+   Download **MNH GeoTIFF** files from **IGN LiDAR HD** and place them in:
+   - `./data/lidar/`
+
+---
+
+### 2) Environment Setup
+
+Create a `.env` file in `./frontend` (or export the variable in your shell):
+
+```bash
+NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN=pk.your_mapbox_token_here
+```
+
+---
+
+### 3) Build & Run
+
+Start the full stack (PostGIS, NestJS + Python engine, Next.js) using Docker Compose:
+
+```bash
 docker-compose up --build -d
-Data Ingestion
+```
 
-Bash
-docker exec -it nest_backend npx ts-node src/scripts/seed-forest.ts
-Access Terminal
+---
 
-Frontend: http://localhost:3001
+### 4) Database Seeding (ETL)
 
-Backend API: http://localhost:3000
+Once containers are healthy, run the ingestion script to:
 
-📈 Roadmap
-[x] Full-Stack Containerization
+- parse shapefiles
+- convert coordinates **EPSG:2154 → EPSG:4326**
+- seed the PostGIS database
 
-[x] PostGIS Spatial Integration
+```bash
+docker exec -it nest_backend pnpm run seed:forest
+```
 
-[x] JWT Authentication & Authorization
+---
 
-[x] Real-time Map State Persistence
+### 5) Access the Platform
 
-[ ] Advanced Spatial Queries (Bounding Box Filtering)
+- **Frontend Web App**: `http://localhost:3001`  
+- **Backend Swagger API Docs**: `http://localhost:3000/api`
 
-[ ] Internationalization (i18n) for Global Markets
+---
 
-[ ] Swagger API Documentation Integration
+## 📖 API Notes
+
+The application exposes **RESTful APIs** documented via **Swagger** at:
+
+- `http://localhost:3000/api`
+
+This includes endpoints for:
+
+- user authentication
+- bounding-box forest queries
+- LiDAR spatial triggers
+
+**Note:** REST was chosen over GraphQL to optimize streaming of **binary / GeoJSON** payloads between Mapbox and PostGIS.
+
+---
+
+## 🧠 Assumptions & Simplifications
+
+To keep performance strong and respect hardware limits:
+
+- **Viewport Guard**: Forest polygons are requested only when `zoom >= 10.5` to avoid browser rendering bottlenecks and heavy DB loads.
+- **LiDAR Lazy Evaluation**: Rather than ingesting `50GB+` of GeoTIFFs into PostGIS, the Python Rasterio engine performs **on-the-fly masking** on raw files mounted as a Docker volume. It scans the directory and selects the intersecting tile based on user polygons.
+- **Demo Scope**: ETL is configured for departments **75, 77, 78, 91, 92**.
+
+---
+
+## ⏱️ Time Estimate
+
+- **Core** (Auth, Map, API, DevOps): ~16 hours  
+- **Bonus** (Polygon Analysis, LiDAR Data Engineering): ~9 hours  
+- **Total**: ~25 hours
