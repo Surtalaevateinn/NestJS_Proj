@@ -7,7 +7,7 @@ import {ForestParcel} from "./forest/forest.entity";
 import { ForestController } from './forest/forest.controller';
 import { AuthModule } from './auth/auth.module';
 import { LidarModule } from './lidar/lidar.module';
-import {LidarController} from "./lidar/lidar.controller";
+import { CadastreParcel } from './forest/cadastre.entity';
 
 @Module({
   imports: [
@@ -22,7 +22,7 @@ import {LidarController} from "./lidar/lidar.controller";
       autoLoadEntities: true,
       synchronize: true,
     }),
-    TypeOrmModule.forFeature([User, ForestParcel]),
+    TypeOrmModule.forFeature([User, ForestParcel, CadastreParcel]),
     AuthModule,
     LidarModule,
   ],

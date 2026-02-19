@@ -6,14 +6,13 @@ import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import MapboxDraw from '@mapbox/mapbox-gl-draw';
 import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css';
-// [Refinement] Added turf/bbox helper or manual calculation for fitting bounds.
-// Since we want to avoid new deps if possible, we will calculate bounds manually in the component.
+
 import { getToken, logout } from '@/lib/auth';
 import { fetchWithAuth } from '@/lib/api';
 
 const MB_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN;
 
-// [Refinement] Helper to calculate bounds of a GeoJSON geometry
+// Helper: calculate bounds from Polygon geometry for fitBounds
 const getGeometryBounds = (geometry: any): mapboxgl.LngLatBoundsLike | null => {
     if (geometry.type !== 'Polygon') return null;
     const coords = geometry.coordinates[0];
@@ -33,39 +32,41 @@ export default function MapPage() {
     const drawRef = useRef<MapboxDraw | null>(null);
     const analysisPanelRef = useRef<HTMLDivElement>(null);
 
+    const panelOffsetRef = useRef({ x: 0, y: 0 });
+    const initialDragOffset = useRef({ x: 0, y: 0 });
+
     const router = useRouter();
 
     const [isLoaded, setIsLoaded] = useState(false);
     const [stats, setStats] = useState({ totalArea: 0, count: 0 });
     const [currentZoom, setCurrentZoom] = useState(10);
 
-    // [Micro-interaction] Specific state for spatial data fetching to show spinner
     const [isFetchingSpatial, setIsFetchingSpatial] = useState(false);
-
-    // [Robustness] Error handling state
     const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-    const [analysisResult, setAnalysisResult] = useState<any | null>(null);
-    const [isAnalyzing, setIsAnalyzing] = useState(false);
+    const [analysisResult, setAnalysisResult] = useState<{
+        totalAnalysisArea: number;
+        species: { name: string; area: number; percentage?: number }[];
+        parcels: string[];
+        communes?: string[];
+        _geometry?: any;
+    } | null>(null);
 
-    // ── New: LiDAR integration states ───────────────────────────────────────
     const [lidarResult, setLidarResult] = useState<{
         min: number;
         max: number;
         mean: number;
         unit: string;
     } | null>(null);
-    const [isLidarAnalyzing, setIsLidarAnalyzing] = useState(false);
-    // ────────────────────────────────────────────────────────────────────────
 
-    // [Visual Feedback] Track if user is currently drawing
+    const [isAnalyzing, setIsAnalyzing] = useState(false);
+    const [isLidarAnalyzing, setIsLidarAnalyzing] = useState(false);
+
     const [isDrawingMode, setIsDrawingMode] = useState(false);
 
-    // Panel position management
     const [initialCenter, setInitialCenter] = useState<{ x: number; y: number } | null>(null);
     const [panelOffset, setPanelOffset] = useState({ x: 0, y: 0 });
 
-    // Administrative Hierarchy State
     const [hierarchy, setHierarchy] = useState({
         region: 'Île-de-France',
         dept: '',
@@ -73,21 +74,18 @@ export default function MapPage() {
     });
     const [communes, setCommunes] = useState<{ name: string }[]>([]);
 
-    // [Layer Switcher] State for layer visibility
     const [layerVisibility, setLayerVisibility] = useState({
         forests: true,
-        cadastre: false
+        cadastre: false,
     });
 
-    /**
-     * [Robustness] Optimized Spatial Fetching with Error UI
-     */
+    useEffect(() => {
+        panelOffsetRef.current = panelOffset;
+    }, [panelOffset]);
+
     const loadVisibleForests = async () => {
         if (!map.current) return;
-
-        // [Micro-interaction] Start loading state
         setIsFetchingSpatial(true);
-
         const zoom = map.current.getZoom();
         setCurrentZoom(zoom);
 
@@ -110,55 +108,38 @@ export default function MapPage() {
         try {
             const geojsonData = await fetchWithAuth(`/forests${query}`);
             const source = map.current.getSource('forests') as mapboxgl.GeoJSONSource;
-            if (source) {
-                source.setData(geojsonData);
-            }
+            if (source) source.setData(geojsonData);
 
             const visibleArea = geojsonData.features.reduce(
                 (acc: number, f: any) => acc + (f.properties?.area || 0),
                 0
             );
             setStats({ totalArea: visibleArea, count: geojsonData.features.length });
-            setErrorMsg(null); // Clear previous errors on success
+            setErrorMsg(null);
         } catch (error) {
             console.error('Spatial fetch failed:', error);
-            // [Robustness] Show Toast on error
             setErrorMsg("Connection Lost: Unable to retrieve spatial data.");
         } finally {
-            // [Micro-interaction] End loading state
             setIsFetchingSpatial(false);
         }
     };
 
-    /**
-     * [Layer Switcher] Toggle Handler
-     */
     const toggleLayer = (layerId: 'forests' | 'cadastre') => {
         const newState = !layerVisibility[layerId];
-        setLayerVisibility(prev => ({ ...prev, [layerId]: newState }));
+        setLayerVisibility((prev) => ({ ...prev, [layerId]: newState }));
 
         if (map.current) {
-            // Map the internal ID to the Mapbox layer ID
             const mapboxLayerId = layerId === 'forests' ? 'forests-layer' : 'cadastre-layer';
             if (map.current.getLayer(mapboxLayerId)) {
-                map.current.setLayoutProperty(
-                    mapboxLayerId,
-                    'visibility',
-                    newState ? 'visible' : 'none'
-                );
+                map.current.setLayoutProperty(mapboxLayerId, 'visibility', newState ? 'visible' : 'none');
             }
         }
     };
 
     const handleDeptChange = async (deptCode: string) => {
-        // [Robustness] Cleanup Draw and Forest Source Cache
         if (drawRef.current) drawRef.current.deleteAll();
-
-        // Clear forest source explicitly to prevent ghost data while flying
         const forestSource = map.current?.getSource('forests') as mapboxgl.GeoJSONSource;
-        if (forestSource) {
-            forestSource.setData({ type: 'FeatureCollection', features: [] });
-        }
+        if (forestSource) forestSource.setData({ type: 'FeatureCollection', features: [] });
 
         setAnalysisResult(null);
         setHierarchy({ ...hierarchy, dept: deptCode, commune: '' });
@@ -217,45 +198,30 @@ export default function MapPage() {
 
     const handleDrawCreate = async (e: { features: any[] }) => {
         if (!e.features?.length) return;
-
-        // [Visual Feedback] Turn off drawing mode hint
         setIsDrawingMode(false);
 
         const geometry = e.features[0].geometry;
 
-        // ── New: Start both analyses in parallel ─────────────────────────────
         setIsAnalyzing(true);
         setIsLidarAnalyzing(true);
         setAnalysisResult(null);
         setLidarResult(null);
-        // ────────────────────────────────────────────────────────────────────
-
-        // Store geometry temporarily for zoom-to-bounds feature
-        const currentGeometry = geometry;
 
         try {
-            // 1. Forest / species / area analysis (POST geometry)
-            const forestPromise = fetchWithAuth('/forests/analyze', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(geometry),
-            });
-
-            // 2. LiDAR canopy height statistics
-            //    Currently global file – later can pass bbox / centroid / tile id
-            // const lidarPromise = fetchWithAuth('/lidar/forest-height');
-            const lidarPromise = fetchWithAuth('/lidar/forest-height', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(geometry), // Input polygon
-            });
-
             const [forestData, lidarData] = await Promise.all([
-                forestPromise,
-                lidarPromise,
+                fetchWithAuth('/forests/analyze', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(geometry),
+                }),
+                fetchWithAuth('/lidar/forest-height', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(geometry),
+                }),
             ]);
 
-            setAnalysisResult({ ...forestData, _geometry: currentGeometry });
+            setAnalysisResult({ ...forestData, _geometry: geometry });
             setLidarResult(lidarData);
         } catch (err) {
             console.error('Analysis request failed:', err);
@@ -268,12 +234,10 @@ export default function MapPage() {
 
     const handleDrawDelete = () => {
         setAnalysisResult(null);
-        setLidarResult(null);           // ← new
+        setLidarResult(null);
+        setPanelOffset({ x: 0, y: 0 });
     };
 
-    /**
-     * [Visual Feedback] Zoom to Impacted Area
-     */
     const handleZoomToImpact = () => {
         if (!map.current || !analysisResult?._geometry) return;
         const bounds = getGeometryBounds(analysisResult._geometry);
@@ -282,12 +246,11 @@ export default function MapPage() {
         }
     };
 
-    // ... [Existing Panel Drag Logic] ...
     useEffect(() => {
         if (analysisResult || isAnalyzing) {
             if (!initialCenter) {
-                const panelWidth = 380;
-                const panelHeight = 420;
+                const panelWidth = 420;
+                const panelHeight = 480;
                 setInitialCenter({
                     x: window.innerWidth / 2 - panelWidth / 2,
                     y: window.innerHeight / 2 - panelHeight / 2,
@@ -306,16 +269,13 @@ export default function MapPage() {
         let isDragging = false;
         let startX = 0;
         let startY = 0;
-        let currentOffsetX = panelOffset.x;
-        let currentOffsetY = panelOffset.y;
 
         const onMouseDown = (e: MouseEvent) => {
             if ((e.target as HTMLElement).closest('button') || (e.target as HTMLElement).closest('.clickable-text')) return;
             isDragging = true;
             startX = e.clientX;
             startY = e.clientY;
-            currentOffsetX = panelOffset.x;
-            currentOffsetY = panelOffset.y;
+            initialDragOffset.current = { ...panelOffsetRef.current };
             e.preventDefault();
         };
 
@@ -323,10 +283,15 @@ export default function MapPage() {
             if (!isDragging) return;
             const dx = e.clientX - startX;
             const dy = e.clientY - startY;
-            setPanelOffset({ x: currentOffsetX + dx, y: currentOffsetY + dy });
+            setPanelOffset({
+                x: initialDragOffset.current.x + dx,
+                y: initialDragOffset.current.y + dy,
+            });
         };
 
-        const onMouseUp = () => { isDragging = false; };
+        const onMouseUp = () => {
+            isDragging = false;
+        };
 
         panel.addEventListener('mousedown', onMouseDown);
         window.addEventListener('mousemove', onMouseMove);
@@ -339,7 +304,6 @@ export default function MapPage() {
         };
     }, [initialCenter]);
 
-    // ... [Map Initialization] ...
     useEffect(() => {
         mapboxgl.accessToken = MB_TOKEN || 'pk.eyJ1Ijoic3VydGFsb2dpIiwiYSI6ImNtbHI0em8xOTA2dXczZXNnOTVxdW9ybGsifQ.m7eHhSov9zrhlYMXpH4aJg';
 
@@ -376,13 +340,8 @@ export default function MapPage() {
         map.current.addControl(draw, 'right');
         drawRef.current = draw;
 
-        // [Visual Feedback] Listen for draw mode changes
         map.current.on('draw.modechange', (e: any) => {
-            if (e.mode === 'draw_polygon') {
-                setIsDrawingMode(true);
-            } else if (e.mode === 'simple_select') {
-                setIsDrawingMode(false);
-            }
+            setIsDrawingMode(e.mode === 'draw_polygon');
         });
 
         hoverPopup.current = new mapboxgl.Popup({
@@ -394,7 +353,7 @@ export default function MapPage() {
         map.current.on('load', async () => {
             map.current?.addSource('cadastre', {
                 type: 'vector',
-                url: 'https://openmaptiles.geo.data.gouv.fr/data/cadastre.json'
+                url: 'https://openmaptiles.geo.data.gouv.fr/data/cadastre.json',
             });
 
             map.current?.addLayer({
@@ -402,16 +361,14 @@ export default function MapPage() {
                 type: 'line',
                 source: 'cadastre',
                 'source-layer': 'parcelles',
-                layout: {
-                    visibility: 'none'
-                },
+                layout: { visibility: 'none' },
                 paint: {
                     'line-color': '#06b6d4',
                     'line-width': ['interpolate', ['linear'], ['zoom'], 14, 0.5, 18, 1.5],
                     'line-opacity': 0.75,
-                    'line-dasharray': [2, 1]
+                    'line-dasharray': [2, 1],
                 },
-                minzoom: 13
+                minzoom: 13,
             });
 
             map.current?.addSource('forests', {
@@ -426,9 +383,7 @@ export default function MapPage() {
                 id: 'forests-layer',
                 type: 'fill',
                 source: 'forests',
-                layout: {
-                    'visibility': layerVisibility.forests ? 'visible' : 'none'
-                },
+                layout: { visibility: layerVisibility.forests ? 'visible' : 'none' },
                 paint: {
                     'fill-color': [
                         'match',
@@ -442,12 +397,7 @@ export default function MapPage() {
                         'Conifères', '#26C6DA',
                         '#94A3B8',
                     ],
-                    'fill-opacity': [
-                        'case',
-                        ['boolean', ['feature-state', 'hover'], false],
-                        0.9,
-                        0.4,
-                    ],
+                    'fill-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 0.9, 0.4],
                     'fill-outline-color': '#ffffff',
                 },
             });
@@ -458,6 +408,7 @@ export default function MapPage() {
             map.current?.on('mouseenter', 'forests-layer', () => {
                 map.current!.getCanvas().style.cursor = 'pointer';
             });
+
             map.current?.on('mousemove', 'forests-layer', (e) => {
                 if (e.features && e.features.length > 0) {
                     const feature = e.features[0];
@@ -467,13 +418,17 @@ export default function MapPage() {
                     hoveredStateId.current = feature.id as string | number;
                     map.current?.setFeatureState({ source: 'forests', id: hoveredStateId.current }, { hover: true });
 
-                    hoverPopup.current?.setLngLat(e.lngLat).setHTML(
-                        `<div class="px-3 py-1.5 bg-slate-900/90 backdrop-blur-md border border-cyan-500/50 text-cyan-400 text-[10px] font-mono tracking-tighter uppercase rounded shadow-[0_0_15px_rgba(6,182,212,0.3)]">
-                            SYSTEM_LOG: ${feature.properties?.species} detected
-                        </div>`
-                    ).addTo(map.current!);
+                    hoverPopup.current
+                        ?.setLngLat(e.lngLat)
+                        .setHTML(
+                            `<div class="px-3 py-1.5 bg-slate-900/90 backdrop-blur-md border border-cyan-500/50 text-cyan-400 text-[10px] font-mono tracking-tighter uppercase rounded shadow-[0_0_15px_rgba(6,182,212,0.3)]">
+                ${feature.properties?.species || 'Unknown'}
+              </div>`
+                        )
+                        .addTo(map.current!);
                 }
             });
+
             map.current?.on('mouseleave', 'forests-layer', () => {
                 map.current!.getCanvas().style.cursor = '';
                 if (hoveredStateId.current !== null) {
@@ -491,9 +446,6 @@ export default function MapPage() {
         map.current.on('moveend', async () => {
             const center = map.current?.getCenter();
             const zoom = map.current?.getZoom();
-
-            // [Micro-interaction] Indicate data is stale/pending update
-            setIsFetchingSpatial(true);
 
             if (center && zoom) {
                 const viewState = { lat: center.lat, lng: center.lng, zoom };
@@ -533,17 +485,32 @@ export default function MapPage() {
             <div className="absolute inset-0 pointer-events-none z-50 opacity-[0.03] bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] bg-[size:100%_2px,3px_100%]" />
 
             <style jsx global>{`
-                .mapboxgl-popup-content { background: transparent !important; border: none !important; box-shadow: none !important; padding: 0 !important; }
-                .mapboxgl-popup-anchor-bottom .mapboxgl-popup-tip { border-top-color: transparent !important; }
-                .mapboxgl-ctrl-bottom-right { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; margin-right: 1.5rem !important; margin-bottom: 1.5rem !important; }
-                .mapboxgl-ctrl-scale { background-color: rgba(15, 23, 42, 0.6) !important; border-color: rgba(6, 182, 212, 0.5) !important; color: #94a3b8 !important; font-family: ui-monospace, monospace !important; font-size: 9px !important; }
-                select option { background: #0f172a; color: #cbd5e1; }
-                .mapboxgl-ctrl-group { margin-top: 280px !important; background-color: rgba(15, 23, 42, 0.8) !important; border: 1px solid rgba(6, 182, 212, 0.2) !important; backdrop-filter: blur(8px); }
-                .mapbox-gl-draw_polygon, .mapbox-gl-draw_trash { filter: invert(1) hue-rotate(180deg) brightness(1.5) !important; }
-                .scrollbar-thin::-webkit-scrollbar { width: 4px; }
-                .scrollbar-thin::-webkit-scrollbar-thumb { background: rgba(6, 182, 212, 0.3); border-radius: 10px; }
-            `}</style>
+        .mapboxgl-popup-content {
+          background: transparent !important;
+          border: none !important;
+          box-shadow: none !important;
+          padding: 0 !important;
+        }
+        .mapboxgl-popup-anchor-bottom .mapboxgl-popup-tip {
+          border-top-color: transparent !important;
+        }
+        .mapboxgl-ctrl-bottom-right {
+          display: flex;
+          flex-direction: column;
+          align-items: flex-end;
+          gap: 8px;
+          margin-right: 1.5rem !important;
+          margin-bottom: 1.5rem !important;
+        }
+        select option {
+          background: #0f172a;
+          color: #cbd5e1;
+        }
+        .scrollbar-thin::-webkit-scrollbar { width: 4px; }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background: rgba(6,182,212,0.3); border-radius: 10px; }
+      `}</style>
 
+            {/* Top Navigation Bar */}
             <nav className="absolute top-0 left-0 right-0 z-20 p-6 flex justify-between items-center bg-gradient-to-b from-slate-950/80 to-transparent backdrop-blur-[2px]">
                 <div className="flex items-center gap-4">
                     <div className="w-8 h-8 rounded-full border border-cyan-500/50 flex items-center justify-center bg-cyan-500/10 shadow-[0_0_10px_rgba(6,182,212,0.2)]">
@@ -568,9 +535,11 @@ export default function MapPage() {
                                 onChange={() => toggleLayer('forests')}
                                 className="appearance-none w-2.5 h-2.5 border border-slate-600 rounded-sm checked:bg-cyan-500 checked:border-cyan-500 transition-colors"
                             />
-                            <span className="text-[9px] uppercase tracking-widest text-slate-400 group-hover:text-white transition-colors">Bio-Data</span>
+                            <span className="text-[9px] uppercase tracking-widest text-slate-400 group-hover:text-white transition-colors">
+                Bio-Data
+              </span>
                         </label>
-                        <div className="w-[1px] bg-white/10 h-3 self-center mx-1"/>
+                        <div className="w-[1px] bg-white/10 h-3 self-center mx-1" />
                         <label className="flex items-center gap-2 cursor-pointer group">
                             <input
                                 type="checkbox"
@@ -578,7 +547,9 @@ export default function MapPage() {
                                 onChange={() => toggleLayer('cadastre')}
                                 className="appearance-none w-2.5 h-2.5 border border-slate-600 rounded-sm checked:bg-cyan-500 checked:border-cyan-500 transition-colors"
                             />
-                            <span className="text-[9px] uppercase tracking-widest text-slate-400 group-hover:text-white transition-colors">Cadastre</span>
+                            <span className="text-[9px] uppercase tracking-widest text-slate-400 group-hover:text-white transition-colors">
+                Cadastre
+              </span>
                         </label>
                     </div>
 
@@ -615,6 +586,7 @@ export default function MapPage() {
                 </div>
             )}
 
+            {/* Left Sidebar - Navigation Hierarchy */}
             <div className="absolute top-24 left-6 z-20 w-64 space-y-2">
                 <div className="bg-slate-900/80 backdrop-blur-xl border border-white/10 p-4 rounded-sm shadow-2xl transition-all hover:border-cyan-500/30">
                     <label className="text-[8px] text-cyan-500 uppercase tracking-[0.2em] mb-3 block border-b border-cyan-500/20 pb-1 font-bold">
@@ -658,16 +630,18 @@ export default function MapPage() {
                 </div>
             </div>
 
+            {/* ─── Analysis Panel ─── Compact grid layout ─── */}
             {(isAnalyzing || analysisResult) && initialCenter && (
                 <div
                     ref={analysisPanelRef}
-                    className="absolute z-40 bg-slate-900/92 backdrop-blur-xl border border-cyan-500/40 rounded-lg shadow-[0_0_40px_rgba(6,182,212,0.25)] p-5 min-w-[320px] max-w-[420px] cursor-move select-none"
+                    className="absolute z-40 bg-slate-900/92 backdrop-blur-xl border border-cyan-500/40 rounded-lg shadow-[0_0_40px_rgba(6,182,212,0.25)] p-5 min-w-[360px] max-w-[520px] cursor-move select-none max-h-[80vh] overflow-y-auto"
                     style={{
                         left: `${initialCenter.x + panelOffset.x}px`,
                         top: `${initialCenter.y + panelOffset.y}px`,
                     }}
                 >
-                    <div className="flex justify-between items-center border-b border-cyan-500/20 pb-3 mb-4">
+                    {/* Sticky Header */}
+                    <div className="flex justify-between items-center border-b border-cyan-500/20 pb-3 mb-4 sticky top-0 bg-slate-900/92 z-10">
                         <h3 className="text-sm text-cyan-400 font-bold tracking-[0.15em] uppercase">Sector Intelligence</h3>
                         <div className="flex items-center gap-3">
                             {(isAnalyzing || isLidarAnalyzing) && <div className="w-2 h-2 bg-cyan-500 rounded-full animate-ping" />}
@@ -686,89 +660,136 @@ export default function MapPage() {
                     </div>
 
                     {isAnalyzing || isLidarAnalyzing ? (
-                        <div className="text-center py-6 text-sm text-slate-400 font-mono tracking-wide">
+                        <div className="text-center py-10 text-sm text-slate-400 font-mono tracking-wide">
                             COMPUTING GEOMETRIC & VERTICAL INTERSECTIONS...
                         </div>
                     ) : (
-                        <div className="space-y-5 text-sm">
-                            <div>
-                                <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Selected Zone Area</p>
-                                <p className="text-2xl font-mono text-white">
+                        <div className="space-y-5">
+                            {/* Total Area - Full width header */}
+                            <div className="bg-slate-950/50 p-3 rounded border border-cyan-500/20 text-center">
+                                <p className="text-xs text-slate-400 uppercase tracking-wider mb-1">Selected Zone Area</p>
+                                <p className="text-3xl font-mono text-white">
                                     {analysisResult?.totalAnalysisArea?.toFixed(2) ?? '—'}
-                                    <span className="text-base text-slate-500 ml-2">Ha</span>
+                                    <span className="text-lg text-slate-400 ml-2">Ha</span>
                                 </p>
                             </div>
 
-                            <div>
-                                <p className="text-xs text-slate-500 uppercase tracking-wider mb-2">Vegetation Composition</p>
-                                <div className="space-y-2 max-h-48 overflow-y-auto pr-2 scrollbar-thin">
-                                    {analysisResult?.species?.map((s: any, idx: number) => (
-                                        <div key={idx} className="flex justify-between items-center py-1">
-                                            <span className="text-slate-200">{s.name}</span>
-                                            <span className="font-mono text-cyan-400">{s.area.toFixed(2)} Ha</span>
+                            {/* Two-column grid for main content */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {/* Left column: Vegetation + Cadastre */}
+                                <div className="space-y-4">
+                                    {/* Vegetation Composition */}
+                                    <div className="bg-slate-950/40 p-3 rounded border border-white/5">
+                                        <p className="text-[10px] text-cyan-500 uppercase tracking-widest mb-2 font-bold">Vegetation Composition</p>
+                                        <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1 scrollbar-thin">
+                                            {analysisResult?.species?.map((s, idx) => (
+                                                <div key={idx} className="flex justify-between items-center text-[13px]">
+                                                    <span className="text-slate-200 truncate max-w-[140px]">{s.name}</span>
+                                                    <div className="flex items-center gap-2 whitespace-nowrap">
+                                                        <span className="font-mono text-cyan-400">{s.area.toFixed(1)} Ha</span>
+                                                        {s.percentage !== undefined && (
+                                                            <span className="text-[10px] text-slate-400">({s.percentage.toFixed(0)}%)</span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                            {(!analysisResult?.species || analysisResult.species.length === 0) && (
+                                                <p className="text-xs text-red-400/80 italic text-center py-3">
+                                                    No forest data
+                                                </p>
+                                            )}
                                         </div>
-                                    ))}
-                                    {(!analysisResult?.species || analysisResult.species.length === 0) && (
-                                        <p className="text-sm text-red-400/80 italic text-center py-4">
-                                            No forest data detected in this sector.
+                                    </div>
+
+                                    {/* Cadastre Parcels */}
+                                    <div className="bg-slate-950/40 p-3 rounded border border-white/5">
+                                        <p className="text-[10px] text-cyan-500 uppercase tracking-widest mb-2 font-bold">
+                                            Impacted Parcels
                                         </p>
-                                    )}
+                                        <div className="flex flex-wrap gap-1 max-h-20 overflow-y-auto scrollbar-thin">
+                                            {analysisResult?.parcels?.length ? (
+                                                analysisResult.parcels.map((label, idx) => (
+                                                    <span
+                                                        key={idx}
+                                                        className="px-2 py-0.5 bg-cyan-900/30 border border-cyan-500/20 rounded text-[9px] text-cyan-300 font-mono"
+                                                    >
+                            {label}
+                          </span>
+                                                ))
+                                            ) : (
+                                                <p className="text-[9px] text-slate-500 italic">
+                                                    {layerVisibility.cadastre ? 'No parcels' : 'Enable Cadastre layer (zoom ≥13)'}
+                                                </p>
+                                            )}
+                                        </div>
+                                    </div>
                                 </div>
-                            </div>
 
-                            {/* ── New: LiDAR CHM (Canopy Height Model) statistics ──────── */}
-                            <div className="border-t border-white/5 pt-4 my-2">
-                                <p className="text-[10px] text-cyan-500 uppercase tracking-widest mb-3 font-bold">
-                                    LiDAR Altitude Analysis (CHM)
-                                </p>
-
-                                {isLidarAnalyzing ? (
-                                    <div className="animate-pulse text-[10px] text-slate-500 font-mono">
-                                        SCANNING VERTICAL STRUCTURE...
-                                    </div>
-                                ) : lidarResult ? (
-                                    <div className="grid grid-cols-3 gap-2 bg-slate-950/50 p-3 rounded border border-white/5">
-                                        <div className="text-center">
-                                            <p className="text-[8px] text-slate-500 uppercase">Min</p>
-                                            <p className="font-mono text-xs text-slate-300">{lidarResult.min}m</p>
-                                        </div>
-                                        <div className="text-center border-x border-white/10">
-                                            <p className="text-[8px] text-cyan-500 uppercase font-bold">Average</p>
-                                            {/*<p className="font-mono text-sm text-cyan-400">{lidarResult.mean.toFixed(1)}m</p>*/}
-                                            <p className="font-mono text-sm text-cyan-400">
-                                                {typeof lidarResult.mean === 'number' ? lidarResult.mean.toFixed(1) : '0.0'}m
+                                {/* Right column: LiDAR + Communes */}
+                                <div className="space-y-4">
+                                    {/* LiDAR */}
+                                    <div className="bg-slate-950/40 p-3 rounded border border-white/5">
+                                        <p className="text-[10px] text-cyan-500 uppercase tracking-widest mb-2 font-bold">
+                                            LiDAR CHM Analysis
+                                        </p>
+                                        {isLidarAnalyzing ? (
+                                            <div className="animate-pulse text-[10px] text-slate-500 text-center py-2">
+                                                Scanning...
+                                            </div>
+                                        ) : lidarResult ? (
+                                            <div className="grid grid-cols-3 gap-2 text-center">
+                                                <div>
+                                                    <p className="text-[9px] text-slate-500">Min</p>
+                                                    <p className="text-sm text-slate-300">{lidarResult.min}m</p>
+                                                </div>
+                                                <div className="border-x border-white/10">
+                                                    <p className="text-[9px] text-cyan-500 font-bold">Avg</p>
+                                                    <p className="text-sm text-cyan-400">
+                                                        {typeof lidarResult.mean === 'number' ? lidarResult.mean.toFixed(1) : '—'}m
+                                                    </p>
+                                                </div>
+                                                <div>
+                                                    <p className="text-[9px] text-slate-500">Max</p>
+                                                    <p className="text-sm text-slate-300">{lidarResult.max}m</p>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <p className="text-[10px] text-slate-600 italic text-center py-2">
+                                                No vertical data
                                             </p>
-                                        </div>
-                                        <div className="text-center">
-                                            <p className="text-[8px] text-slate-500 uppercase">Max</p>
-                                            <p className="font-mono text-xs text-slate-300">{lidarResult.max}m</p>
-                                        </div>
+                                        )}
                                     </div>
-                                ) : (
-                                    <p className="text-[10px] text-slate-600 italic">No vertical data for this sector</p>
-                                )}
-                            </div>
-                            {/* ─────────────────────────────────────────────────────────── */}
 
-                            <div className="border-t border-white/5 pt-3">
-                                <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Impacted Administrative Zones</p>
-                                <p
-                                    onClick={handleZoomToImpact}
-                                    className="text-slate-300 leading-relaxed text-[13px] clickable-text cursor-pointer hover:text-cyan-400 hover:underline decoration-dashed underline-offset-4 transition-colors"
-                                    title="Click to focus map on this sector"
-                                >
-                                    {analysisResult?.communes?.join(' • ') || 'None'} <span className="text-[9px] text-cyan-600 align-super">↗</span>
-                                </p>
+                                    {/* Communes */}
+                                    <div className="bg-slate-950/40 p-3 rounded border border-white/5">
+                                        <p className="text-[10px] text-cyan-500 uppercase tracking-widest mb-2 font-bold">
+                                            Impacted Zones
+                                        </p>
+                                        <p
+                                            onClick={handleZoomToImpact}
+                                            className="text-slate-300 text-[13px] leading-relaxed cursor-pointer hover:text-cyan-400 transition-colors"
+                                            title="Click to zoom to area"
+                                        >
+                                            {analysisResult?.communes?.join(' • ') || 'None'}
+                                            <span className="text-[10px] text-cyan-600 ml-1">↗</span>
+                                        </p>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     )}
                 </div>
             )}
 
+            {/* Right Sidebar - Stats */}
             <div className="absolute top-24 right-6 z-10 w-56 space-y-4">
                 <div className="bg-slate-900/60 backdrop-blur-xl border border-white/5 p-4 rounded-sm shadow-2xl">
                     <p className="text-[8px] text-slate-500 uppercase tracking-tighter mb-1">Total Monitored Area</p>
-                    <h3 className={`text-xl text-cyan-400 font-mono tracking-tighter transition-opacity duration-300 ${isFetchingSpatial ? 'opacity-50' : 'opacity-100'}`}>
+                    <h3
+                        className={`text-xl text-cyan-400 font-mono tracking-tighter transition-opacity duration-300 ${
+                            isFetchingSpatial ? 'opacity-50' : 'opacity-100'
+                        }`}
+                    >
                         {stats.totalArea.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                         <span className="text-[10px] text-slate-500 uppercase font-sans ml-1">Ha</span>
                     </h3>
@@ -778,7 +799,9 @@ export default function MapPage() {
                 <div className="bg-slate-900/60 backdrop-blur-xl border border-white/5 p-4 rounded-sm shadow-2xl">
                     <div className="flex justify-between items-center mb-1">
                         <p className="text-[8px] text-slate-500 uppercase tracking-tighter">Localized Clusters</p>
-                        {isFetchingSpatial && <div className="w-2 h-2 border border-cyan-500 border-t-transparent rounded-full animate-spin"/>}
+                        {isFetchingSpatial && (
+                            <div className="w-2 h-2 border border-cyan-500 border-t-transparent rounded-full animate-spin" />
+                        )}
                     </div>
                     <h3 className="text-xl text-slate-200 font-mono tracking-tighter">
                         {stats.count}
@@ -792,6 +815,7 @@ export default function MapPage() {
                 </div>
             </div>
 
+            {/* Vegetation Legend */}
             <div className="absolute bottom-10 left-6 z-10 bg-slate-900/60 backdrop-blur-2xl border border-white/10 p-5 rounded-sm shadow-[0_20px_50px_rgba(0,0,0,0.5)] max-w-[200px]">
                 <h4 className="text-[9px] text-slate-400 uppercase tracking-[0.2em] mb-4 font-bold border-l-2 border-cyan-500 pl-2">
                     Vegetation Index
@@ -823,10 +847,10 @@ export default function MapPage() {
                 <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950 z-50">
                     <div className="w-12 h-12 border-2 border-cyan-500/20 border-t-cyan-500 rounded-full animate-spin mb-4" />
                     <span className="text-cyan-500 animate-pulse font-mono text-[10px] tracking-[0.5em] uppercase text-center">
-                        Initialising Neural Link...
-                        <br />
-                        <span className="text-[8px] opacity-50 tracking-normal normal-case">Establishing secure Docker bridge</span>
-                    </span>
+            Initialising Neural Link...
+            <br />
+            <span className="text-[8px] opacity-50 tracking-normal normal-case">Establishing secure Docker bridge</span>
+          </span>
                 </div>
             )}
         </div>

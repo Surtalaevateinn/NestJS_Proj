@@ -1,7 +1,16 @@
-import { Controller, Get, Post, Body, Query, UseGuards, Param } from '@nestjs/common';
+import {
+    Controller,
+    Get,
+    Post,
+    Body,
+    Query,
+    UseGuards,
+    Param,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ForestParcel } from './forest.entity';
+import { CadastreParcel } from './cadastre.entity';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
 @Controller('forests')
@@ -9,13 +18,18 @@ export class ForestController {
     constructor(
         @InjectRepository(ForestParcel)
         private forestRepo: Repository<ForestParcel>,
+
+        @InjectRepository(CadastreParcel)
+        private cadastreRepo: Repository<CadastreParcel>,
     ) {}
 
-
+    /**
+     * Retrieve distinct commune/zone names for a given department
+     * (Used to populate frontend dropdown or filter options)
+     */
     @UseGuards(JwtAuthGuard)
     @Get('communes/:deptCode')
     async getCommunes(@Param('deptCode') deptCode: string) {
-        // Fetch distinct communeName instead of vegetationType for better UX
         const results = await this.forestRepo
             .createQueryBuilder('forest')
             .select('DISTINCT forest.communeName', 'name')
@@ -24,57 +38,117 @@ export class ForestController {
             .orderBy('name', 'ASC')
             .getRawMany();
 
-        // Ensure we return the raw many results which is already [{name: '...'}, ...]
         return results;
     }
 
+    /**
+     * Analyze user-drawn polygon:
+     * - Calculate forest species distribution (area in hectares + percentage)
+     * - Find intersecting cadastre parcels
+     * - Find intersecting administrative zones (communeName)  ← Fixed / Added
+     */
     @UseGuards(JwtAuthGuard)
     @Post('analyze')
     async analyzePolygon(@Body() geometry: any) {
-        // Convert input GeoJSON to a PostGIS geometry string
+        // Convert the incoming GeoJSON geometry (usually Polygon/MultiPolygon) to string
         const inputGeoJson = JSON.stringify(geometry);
 
-        // 1. Calculate Total Area of the drawn polygon (in Hectares)
-        // We cast to geography to get accurate meters, then divide by 10,000
-        const totalSizeQuery = `
-            SELECT ST_Area(ST_GeomFromGeoJSON($1)::geography) / 10000 as "totalHa"
-        `;
-        const sizeResult = await this.forestRepo.query(totalSizeQuery, [inputGeoJson]);
-        const totalUserArea = sizeResult[0].totalHa;
+        // ───────────────────────────────────────────────
+        // 1. Forest species analysis – area per species
+        // ───────────────────────────────────────────────
+        const forestQuery = this.forestRepo.query(
+            `
+      SELECT 
+        "speciesName" AS name,
+        SUM(ST_Area(ST_Intersection(geom, ST_GeomFromGeoJSON($1)::geometry)::geography)) / 10000 AS area_ha
+      FROM forest_parcels
+      WHERE ST_Intersects(geom, ST_GeomFromGeoJSON($1)::geometry)
+      GROUP BY "speciesName"
+      ORDER BY area_ha DESC
+      `,
+            [inputGeoJson],
+        );
 
-        // 2. Intersect with Forests to get Species Distribution
-        // This is the magic: ST_Intersection calculates the exact overlap shape
-        const speciesStats = await this.forestRepo.query(`
-            SELECT 
-                "speciesName",
-                SUM(ST_Area(ST_Intersection(geom, ST_GeomFromGeoJSON($1))::geography)) / 10000 as "areaHa"
-            FROM forest_parcels
-            WHERE ST_Intersects(geom, ST_GeomFromGeoJSON($1))
-            GROUP BY "speciesName"
-            ORDER BY "areaHa" DESC
-        `, [inputGeoJson]);
+        // ───────────────────────────────────────────────
+        // 2. Cadastre parcels intersecting the drawn polygon
+        // ───────────────────────────────────────────────
+        const cadastreQuery = this.cadastreRepo.query(
+            `
+      SELECT DISTINCT label
+      FROM cadastre_parcels
+      WHERE ST_Intersects(geom, ST_GeomFromGeoJSON($1)::geometry)
+      ORDER BY label
+      LIMIT 30
+      `,
+            [inputGeoJson],
+        );
 
-        // 3. Get intersecting Commune/Zone names
-        const communes = await this.forestRepo.query(`
-            SELECT DISTINCT "communeName"
-            FROM forest_parcels
-            WHERE ST_Intersects(geom, ST_GeomFromGeoJSON($1))
-            LIMIT 5
-        `, [inputGeoJson]);
+        // ───────────────────────────────────────────────
+        // 3. Distinct commune/zone names intersecting the polygon
+        //    (Administrative zones / fixed part)
+        // ───────────────────────────────────────────────
+        const communeQuery = this.forestRepo.query(
+            `
+      SELECT DISTINCT "communeName"
+      FROM forest_parcels
+      WHERE ST_Intersects(geom, ST_GeomFromGeoJSON($1)::geometry)
+        AND "communeName" IS NOT NULL
+      ORDER BY "communeName"
+      LIMIT 5
+      `,
+            [inputGeoJson],
+        );
 
+        // Run all three queries concurrently
+        const [forestResults, cadastreResults, communeResults] = await Promise.all([
+            forestQuery,
+            cadastreQuery,
+            communeQuery,
+        ]);
+
+        // Calculate total analyzed area (based on forest parcels – most reliable)
+        const totalAreaHa =
+            forestResults.reduce((sum: number, row: any) => sum + parseFloat(row.area_ha || 0), 0) || 0;
+
+        // Format species data with percentage
+        const speciesDistribution = forestResults.map((row: any) => {
+            const area = parseFloat(row.area_ha) || 0;
+            return {
+                name: row.name || 'Unknown',
+                area: Math.round(area * 100) / 100, // 2 decimal places
+                percentage: totalAreaHa > 0 ? Math.round((area / totalAreaHa) * 1000) / 10 : 0, // 1 decimal place
+            };
+        });
+
+        // Clean cadastre parcel labels
+        const parcels = cadastreResults
+            .map((r: any) => r.label?.trim() || 'Unknown Parcel')
+            .filter(Boolean);
+
+        // Clean commune/zone names
+        const communes = communeResults
+            .map((c: any) => c.communeName?.trim())
+            .filter(Boolean);
+
+        // Final response object
         return {
-            totalAnalysisArea: totalUserArea,
-            species: speciesStats.map((s: any) => ({
-                name: s.speciesName,
-                area: parseFloat(s.areaHa)
-            })),
-            communes: communes.map((c: any) => c.communeName)
+            totalAnalysisArea: Math.round(totalAreaHa * 100) / 100,
+            species: speciesDistribution,
+            parcels,      // list of intersecting cadastral parcel identifiers
+            communes,     // list of intersecting administrative zones / commune names
         };
     }
 
+    /**
+     * Get the centroid of all parcels matching a specific communeName + department
+     * (Used to center the map when user selects a zone from dropdown)
+     */
     @UseGuards(JwtAuthGuard)
     @Get('commune-location')
-    async getCommuneLocation(@Query('name') name: string, @Query('dept') dept: string) {
+    async getCommuneLocation(
+        @Query('name') name: string,
+        @Query('dept') dept: string,
+    ) {
         const result = await this.forestRepo
             .createQueryBuilder('forest')
             .select('ST_AsGeoJSON(ST_Centroid(ST_Collect(forest.geom)))', 'center')
@@ -82,16 +156,21 @@ export class ForestController {
             .andWhere('forest.deptCode = :dept', { dept })
             .getRawOne();
 
-        if (result && result.center) {
+        if (result?.center) {
             const center = JSON.parse(result.center);
             return {
                 lng: center.coordinates[0],
-                lat: center.coordinates[1]
+                lat: center.coordinates[1],
             };
         }
+
         return null;
     }
 
+    /**
+     * Retrieve forest parcels inside the current map viewport (bounding box)
+     * (Used for dynamic loading when panning/zooming)
+     */
     @UseGuards(JwtAuthGuard)
     @Get()
     async getForests(
@@ -102,7 +181,6 @@ export class ForestController {
     ) {
         let queryBuilder = this.forestRepo.createQueryBuilder('forest');
 
-        // Apply spatial filtering if boundary parameters are present [cite: 17, 22]
         if (minLng && minLat && maxLng && maxLat) {
             queryBuilder = queryBuilder.where(
                 `ST_Within(forest.geom, ST_MakeEnvelope(:minLng, :minLat, :maxLng, :maxLat, 4326))`,
@@ -119,7 +197,7 @@ export class ForestController {
 
         return {
             type: 'FeatureCollection',
-            features: parcels.map(p => ({
+            features: parcels.map((p) => ({
                 type: 'Feature',
                 geometry: p.geom,
                 properties: {
@@ -127,8 +205,8 @@ export class ForestController {
                     ign_id: p.ign_id,
                     species: p.speciesName ? p.speciesName.trim() : 'Unknown',
                     area: Number(p.areaHa),
-                }
-            }))
+                },
+            })),
         };
     }
 }

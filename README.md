@@ -8,7 +8,7 @@
   <em>Fig 1. The main geospatial intelligence terminal visualizing BD Forêt bio-data.</em>
 </p>
 
-A production-ready, full-stack **geospatial intelligence terminal** designed to visualize and analyze French forest data (**BD Forêt**) and **LiDAR canopy heights (CHM)**. Implementation of the **Symbiose Full-Stack Technical Challenge — Forest BD Viewer** (all core + Bonus A/B completed in ~25 hours).
+A production-ready, full-stack **geospatial intelligence terminal** designed to visualize and analyze French forest data (**BD Forêt**) and **LiDAR canopy heights (CHM)**. Implementation of the **Symbiose Full-Stack Technical Challenge — Forest BD Viewer** (all core + Bonus A/B completed in ~29 hours).
 
 ---
 
@@ -29,8 +29,9 @@ A production-ready, full-stack **geospatial intelligence terminal** designed to 
 
   - **Cadastre**: Official **Etalab** vector tiles (TileJSON), loaded at `minzoom: 13`.
 - **State Persistence**: Debounced saving of user map view (**latitude / longitude / zoom**).
-- **Bonus A — Polygon Spatial Analysis**: Real-time intersections to compute vegetation composition and exact area inside a user-drawn polygon.
+- **Bonus A — Polygon Spatial Analysis (Backend ST_Intersects)**: Real-time, exact spatial intersections executed in PostGIS. It computes vegetation composition (area per species) and accurately identifies official Cadastre Parcel IDs (e.g., `75101000AS0012`) completely on the server-side, avoiding frontend rendering inaccuracies.
 - **Bonus B — LiDAR CHM Integration**: Python-based spatial indexing + masking engine to extract localized CHM stats (**min / max / avg heights**) directly from IGN GeoTIFFs.
+- **High-Performance ETL Pipeline**: Implemented a memory-efficient data ingestion pipeline using `stream-json` and `stream-chain` with backpressure support. This allows processing massive GeoJSON datasets (hundreds of thousands of parcels) with a constant, minimal memory footprint (< 100MB).
 
   <p align="center">
     <img src="./public/docs/lidar-chm-masking.png" width="900"/>
@@ -62,6 +63,18 @@ A production-ready, full-stack **geospatial intelligence terminal** designed to 
 <p align="center">
   <em>Fig 3. Real-time geometric intersection and LiDAR Canopy Height Model (CHM) spatial masking.</em>
 </p>
+
+
+### Concurrent Spatial Analysis
+
+<p align="center">
+  <img src="./public/docs/parallel-execution-engine.png" width="950"/>
+</p>
+
+<p align="center">
+  <em>Diagram — Parallel execution engine: Concurrent PostGIS ST_Intersects queries combined with Python Rasterio spatial masking.</em>
+</p>
+
 
 ---
 
@@ -103,6 +116,7 @@ Symbiose-Forest-Viewer/
 │   └── package.json
 ├── data/                      # ⚠️ Ignored in git; must be created manually
 │   ├── BDV2/                  # BD Forêt Shapefiles (.shp, .dbf, .prj)
+│   ├── CPL/                   # French Cadastre GeoJSONs (*-parcelles.json)
 │   └── lidar/                 # IGN LiDAR HD GeoTIFFs (.tif)
 ├── public/
 │   └── docs/                  # ✅ README images & diagrams (tracked in git)
@@ -129,7 +143,10 @@ Due to the large size of the datasets, they are not included in the repository.
 2. **BD Forêt (Core)**  
    Download the shapefiles from **https://geoservices.ign.fr/bdforet#telechargementv2** and place them in:
    - `./data/BDV2/`
-3. **LiDAR (Bonus B)**  
+3. **LiDAR**  
+   Download Cadastre files (cadastre-XX-parcelles.json) from **https://cadastre.data.gouv.fr/data/etalab-cadastre/2025-12-01/geojson/departements/** and place them in:
+   - `./data/CPL/`
+4. **LiDAR (Bonus B)**  
    Download **MNH GeoTIFF** files from **https://cartes.gouv.fr/telechargement/IGNF_MNH-LIDAR-HD** and place them in:
    - `./data/lidar/`
 
@@ -196,17 +213,20 @@ This includes endpoints for:
 
 To keep performance strong and respect hardware limits:
 
+- **Cadastre Data Scope & ETL Pragmatism**: Due to the massive volume of cadastral data (e.g., Department 77 contains over 416,000 parcels and exceeds standard Node.js memory limits during standard JSON parsing) and the exercise's time constraints, **the Cadastre database seeding is intentionally restricted to departments 75 and 92**. This aligns perfectly with the available LiDAR data (Bonus B) localized in Paris, ensuring a complete, high-performance demonstration of the "Sector Intelligence" features without unnecessarily bloating the spatial indexes.
+- **Parallel Spatial Execution**: When a user draws a polygon, the frontend triggers a `Promise.all` execution. The NestJS backend concurrently queries the `forest_parcels` and `cadastre_parcels` via PostGIS, while the spawned Python child process simultaneously masks the LiDAR `.tif` files.
+
 - **Viewport Guard**: Forest polygons are requested only when `zoom >= 10.5` to avoid browser rendering bottlenecks and heavy DB loads.
 - **LiDAR Lazy Evaluation**: Rather than ingesting `50GB+` of GeoTIFFs into PostGIS, the Python Rasterio engine performs **on-the-fly masking** on raw files mounted as a Docker volume. It scans the directory and selects the intersecting tile based on user polygons.
-- **Demo Scope**: ETL is configured for departments **75, 77, 78, 91, 92**.
+- **Demo Scope**: Forest/LiDAR ETL is configured for departments **75, 77, 78, 91, 92** (Cadastre seeding is intentionally limited to **75 & 92** for performance).
 
 ---
 
 ## ⏱️ Time Estimate
 
 - **Core** (Auth, Map, API, DevOps): ~16 hours  
-- **Bonus** (Polygon Analysis, LiDAR Data Engineering): ~9 hours  
-- **Total**: ~25 hours
+- **Bonus** (Polygon Analysis, LiDAR Data Engineering): ~13 hours  
+- **Total**: ~29 hours
 
 ---
 
