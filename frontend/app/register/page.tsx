@@ -19,7 +19,7 @@ export default function RegisterPage() {
     const handleRegister = async (e: React.FormEvent) => {
         e.preventDefault();
 
-        // 前端基础验证：检查密码一致性
+        // Basic front-end validation: Check password consistency
         if (formData.password !== formData.confirmPassword) {
             alert('Passwords do not match.');
             return;
@@ -41,7 +41,7 @@ export default function RegisterPage() {
             const data = await res.json();
 
             if (res.ok && data.access_token) {
-                // 注册成功后直接存储 Token 并进入系统
+                // After successful registration, the token will be stored and the user will be able to access the system.
                 setToken(data.access_token);
                 localStorage.setItem('user_view', JSON.stringify(data.user.lastView));
                 router.push('/');
