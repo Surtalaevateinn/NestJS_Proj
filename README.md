@@ -10,6 +10,21 @@
 
 A production-ready, full-stack **geospatial intelligence terminal** designed to visualize and analyze French forest data (**BD Forêt**) and **LiDAR canopy heights (CHM)**. Implementation of the **Symbiose Full-Stack Technical Challenge — Forest BD Viewer** (all core + Bonus A/B completed in ~29 hours).
 
+## Demo Video 
+
+Here's a concise 2:44 demonstration of the Symbiose Technical Challenge implementation: secure geospatial terminal with JWT auth, viewport-optimized navigation across Paris departments, Cadastre + LiDAR polygon analysis (Bonus A & B), and full session persistence.
+
+[![Symbiose Geospatial Terminal Demo](https://img.youtube.com/vi/zh-Q3vX4Yjo/maxresdefault.jpg)](https://youtu.be/zh-Q3vX4Yjo)
+
+*(Click the thumbnail above to watch on YouTube – unlisted video)*
+
+### Note on Video Continuity
+The transition at 01:53 was edited to seamlessly integrate a critical UX/UI feature (the automatic `fitBounds` on 'Impacted Administrative Zones'). This was originally captured in a separate test pass but omitted in the first recording run. The edit ensures the demonstration remains focused, comprehensive, and fits comfortably within a ~3-minute window while fully showcasing the terminal's spatial tracking and camera interaction capabilities.
+
+All other sequences are unedited single-take recordings to preserve authenticity.
+
+
+
 ---
 
 ## ✨ Features
