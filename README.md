@@ -158,10 +158,10 @@ Due to the large size of the datasets, they are not included in the repository.
 2. **BD Forêt (Core)**  
    Download the shapefiles from **https://geoservices.ign.fr/bdforet#telechargementv2** and place them in:
    - `./data/BDV2/`
-3. **LiDAR**  
+3. **Cadastre**  
    Download Cadastre files (cadastre-XX-parcelles.json) from **https://cadastre.data.gouv.fr/data/etalab-cadastre/2025-12-01/geojson/departements/** and place them in:
    - `./data/CPL/`
-4. **LiDAR (Bonus B)**  
+4. **LiDAR**  
    Download **MNH GeoTIFF** files from **https://cartes.gouv.fr/telechargement/IGNF_MNH-LIDAR-HD** and place them in:
    - `./data/lidar/`
 
